@@ -39,7 +39,7 @@ export type FtZEntry = {
   start: string;          // C - Anfang (HH:MM)
   end: string;            // D - Ende (HH:MM)
   duration: string;       // E - Dauer (HH:MM)
-  workOrder: string;      // F - Echte Workorder (authoritative, must be 950100-10005)
+  workOrder: string;      // F - Echte Workorder (authoritative, must match the 000000-00000 format)
   workOrderInput: string; // G - Workorder (raw autocomplete text or workorder)
   ticket: string;         // H - Ticket
   comment: string;        // I - Kommentar
