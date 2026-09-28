@@ -388,6 +388,9 @@ export class Timesheetimport extends AbstractModule {
     const groups = new Map<string, FtZGroup>();
     let sumHours = 0;
 
+    // imported work hours per weekday, for the final sanity check
+    const hoursByDay = new Map<string, number>();
+
     // earliest start / latest end per weekday for the working-hours (From/To) fields
     type FtZDay = { start: string; end: string };
     const workingDay = new Map<string, FtZDay>();
@@ -442,6 +445,7 @@ export class Timesheetimport extends AbstractModule {
       }
       group.hours.set(token, (group.hours.get(token) ?? 0) + hours);
       sumHours += hours;
+      hoursByDay.set(token, (hoursByDay.get(token) ?? 0) + hours);
     });
 
     // derive the break per weekday as the sum of the gaps between consecutive bookings
@@ -501,6 +505,19 @@ export class Timesheetimport extends AbstractModule {
     }
 
     importer.addTask(new WorkOrderSummaryTask(sumHours + sumBreaks, sumBreaks));
+
+    // same sanity check as the JSON import (break rules, max. working time per day, weekly totals),
+    // keyed by weekday (e.g. "Mon") since the Excel carries no dates
+    const daily: SanityDaily = {};
+    workingDay.forEach((day, token) => {
+      const label = token.charAt(0).toUpperCase() + token.slice(1);
+      daily[label] = {
+        hours: hoursByDay.get(token) ?? 0,
+        breaks: breaksByDay.get(token) ?? 0,
+        workingTime: Utils.difference(day.start, day.end)
+      };
+    });
+    importer.addTask(new SanityCheckTask(daily));
 
     importer.clearFailed();
     this.actionFtZExcelClose();
