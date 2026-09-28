@@ -140,7 +140,7 @@ export class Importer {
                 // store last failures in storage
                 sessionStorage.setItem("import_failed_summary", text);
             } else { 
-                text = "JSON import finished\n";
+                text = "Import finished\n";
                 // clear any previous failures from storage
                 sessionStorage.removeItem("import_failed_summary");
             }
