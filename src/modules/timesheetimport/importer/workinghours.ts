@@ -72,6 +72,9 @@ export abstract class WHImportTask extends ImportTask {
             // fill value
             cell.input.focus();
             cell.input.value = this.formatLocalTime(this.value, cell.input);
+            // Unit4 only marks the field as modified (setDirty) in its onchange handler,
+            // which is not triggered by setting the value programmatically
+            cell.input.dispatchEvent(new Event('change', { bubbles: true }));
             cell.input.blur();
             return this.next();
         } else if (cell.cell) {
