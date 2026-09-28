@@ -243,8 +243,9 @@ export class HoursImportTask extends WOFieldImportTask {
     }
 
     protected async lookupField(row: HTMLElement): Promise<FoundField|null> {
-      const headers = await this.waitForElements('th[data-type=cell-weekday]');
-      const cells = await this.waitForElements('.EditRow [data-type=cell-weekday]');
+      // scope to the time entry grid, the working hours grid uses the same cell-weekday markup
+      const headers = await this.waitForElements('.timeentry-section th[data-type=cell-weekday]');
+      const cells = await this.waitForElements('.timeentry-section .EditRow [data-type=cell-weekday]');
 
       // requested date
       const dateEN = (this.date.getMonth()+1) + "/" + this.date.getDate(); // eEN format: M/D
