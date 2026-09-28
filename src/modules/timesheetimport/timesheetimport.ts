@@ -55,6 +55,11 @@ export class Timesheetimport extends AbstractModule {
   // weekday tokens of the merged "Wochentag" column
   private static readonly ftzWeekdays = new Set(['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']);
 
+  // German weekday (column B) -> English grid header token
+  private static readonly ftzWeekdayToken: { [de: string]: string } = {
+    'Mo': 'mon', 'Di': 'tue', 'Mi': 'wed', 'Do': 'thu', 'Fr': 'fri', 'Sa': 'sat', 'So': 'sun'
+  };
+
   // a single time cell, e.g. 09:00 or 46:15
   private static readonly ftzTimeRe = /^\d{1,2}:\d{2}$/;
 
@@ -69,6 +74,8 @@ export class Timesheetimport extends AbstractModule {
   private ftzCorrectionContainer!: HTMLElement;
   private ftzOkButton!: HTMLButtonElement;
   private ftzEntries: FtZEntry[] = [];
+  // bookings on weekdays the current timesheet does not contain (skipped by the import)
+  private ftzOutsideEntries: FtZEntry[] = [];
   private ftzCorrectionInputs: Map<string, HTMLInputElement> = new Map();
   private buttonFailed!: HTMLButtonElement;
 
@@ -288,6 +295,7 @@ export class Timesheetimport extends AbstractModule {
   // reset the FtZ dialog back to the paste view
   private resetFtZView() {
     this.ftzEntries = [];
+    this.ftzOutsideEntries = [];
     this.ftzCorrectionInputs = new Map();
     this.ftzCorrectionContainer.innerHTML = '';
     this.ftzCorrectionContainer.style.display = 'none';
@@ -320,10 +328,19 @@ export class Timesheetimport extends AbstractModule {
         return;
       }
 
-      // on first pass: show the review view if anything needs attention (missing or invalid)
+      // set aside bookings on weekdays that are not part of the current timesheet
+      // (e.g. a week split by a month end), they cannot be imported
+      const gridWeekdays = this.ftzGridWeekdays();
+      if (gridWeekdays.size > 0) {
+        const inGrid = (e: FtZEntry) => gridWeekdays.has(Timesheetimport.ftzWeekdayToken[e.weekday]);
+        this.ftzOutsideEntries = this.ftzEntries.filter(e => !inGrid(e) && !Timesheetimport.isBreakEntry(e));
+        this.ftzEntries = this.ftzEntries.filter(e => inGrid(e));
+      }
+
+      // on first pass: show the review view if anything needs attention (missing, invalid or outside the week)
       const missing = this.ftzEntries.filter(e => e.workOrder === '' && !Timesheetimport.isBreakEntry(e));
       const invalid = this.distinctInvalidWorkOrders();
-      if (missing.length > 0 || invalid.length > 0) {
+      if (missing.length > 0 || invalid.length > 0 || this.ftzOutsideEntries.length > 0) {
         this.renderFtZCorrections(invalid, missing);
         return;
       }
@@ -378,11 +395,6 @@ export class Timesheetimport extends AbstractModule {
     WOImportTask.setSection(this.section);
     WOImportTask.setAddButton(this.standardAddBtn);
 
-    // German weekday (column B) -> English grid header token
-    const weekdayToken: { [de: string]: string } = {
-      'Mo': 'mon', 'Di': 'tue', 'Mi': 'wed', 'Do': 'thu', 'Fr': 'fri', 'Sa': 'sat', 'So': 'sun'
-    };
-
     // group bookings by workorder + comment; sum the durations per weekday
     type FtZGroup = { wo: WorkOrder; hours: Map<string, number> };
     const groups = new Map<string, FtZGroup>();
@@ -405,7 +417,7 @@ export class Timesheetimport extends AbstractModule {
     const dayIntervals = new Map<string, Interval[]>();
 
     this.ftzEntries.forEach(entry => {
-      const token = weekdayToken[entry.weekday];
+      const token = Timesheetimport.ftzWeekdayToken[entry.weekday];
       if (!token) return; // unknown weekday
 
       // "Pause" marker rows carry no work time -> ignore them entirely
@@ -522,6 +534,16 @@ export class Timesheetimport extends AbstractModule {
     importer.clearFailed();
     this.actionFtZExcelClose();
     this.runTasks();
+  }
+
+  // weekday tokens (mon, tue, ...) of the day columns in the time entry grid
+  private ftzGridWeekdays(): Set<string> {
+    const tokens = new Set<string>();
+    this.section.querySelectorAll('th[data-type=cell-weekday]').forEach(head => {
+      const text = (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase();
+      tokens.add(text.slice(0, 3));
+    });
+    return tokens;
   }
 
   // a booking that represents a break (column G / Workorder input contains "Pause")
@@ -656,6 +678,26 @@ export class Timesheetimport extends AbstractModule {
       warning.appendChild(warningHeading);
 
       missingEntries.forEach(entry => {
+        const line = document.createElement("div");
+        line.classList.add("ftzCorrection__occurrence");
+        line.textContent = Timesheetimport.formatOccurrence(entry);
+        warning.appendChild(line);
+      });
+
+      this.ftzCorrectionContainer.appendChild(warning);
+    }
+
+    // warning block for bookings on days that are not part of the current timesheet (skipped)
+    if (this.ftzOutsideEntries.length > 0) {
+      const warning = document.createElement("div");
+      warning.classList.add("ftzCorrection__warning");
+
+      const warningHeading = document.createElement("p");
+      warningHeading.classList.add("ftzCorrection__heading");
+      warningHeading.textContent = `⚠ ${this.ftzOutsideEntries.length} Buchung(en) an Tagen, die es in diesem Timesheet nicht gibt. Diese werden nicht importiert:`;
+      warning.appendChild(warningHeading);
+
+      this.ftzOutsideEntries.forEach(entry => {
         const line = document.createElement("div");
         line.classList.add("ftzCorrection__occurrence");
         line.textContent = Timesheetimport.formatOccurrence(entry);
