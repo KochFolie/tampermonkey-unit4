@@ -276,10 +276,12 @@ export class FtZHoursImportTask extends WOFieldImportTask {
     }
 
     protected async lookupField(row: HTMLElement): Promise<FoundField|null> {
-      const headers = await this.waitForElements('th[data-type=cell-weekday]');
-      const cells = await this.waitForElements('.EditRow [data-type=cell-weekday]');
+      // scope to the time entry grid: the working hours grid uses the same cell-weekday markup
+      // and would otherwise receive the hours whenever its From/To row is in editing mode
+      const headers = await this.waitForElements('.timeentry-section th[data-type=cell-weekday]');
+      const cells = await this.waitForElements('.timeentry-section .EditRow [data-type=cell-weekday]');
 
-      // match the day column by its weekday token (language independent, no date needed)
+      // match the day column by its English weekday token (Mon, Tue, ...), no date needed
       for(var i=0 ; i<headers.length ; ++i) {
         const head = headers[i] as HTMLElement;
         const text = (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase();
