@@ -131,6 +131,9 @@ export class Timesheetimport extends AbstractModule {
           if (Configuration.getInstance().experimentalFtZExcelImport()) {
             this.addFtZExcelImportUI(table);
           }
+
+          // shared by both importers
+          this.addFailedButtonUI(table);
         }
 
         // Run pending tasks from importer
@@ -187,7 +190,9 @@ export class Timesheetimport extends AbstractModule {
     buttonImport.innerHTML = "<span>Import JSON</span>"
     buttonImport.addEventListener("click", this.actionDialog.bind(this));
     buttonImportCell.appendChild(buttonImport);
+  }
 
+  private addFailedButtonUI(table: HTMLTableElement) {
     // create new button for last errors
     const buttonFailedCell = document.createElement("td");
     table.rows[0].insertBefore(buttonFailedCell, this.standardAddBtn.parentElement);
