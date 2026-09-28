@@ -411,11 +411,21 @@ export class Timesheetimport extends AbstractModule {
       const hours = Utils.hoursFromTimestring(entry.duration);
       if (isNaN(hours) || hours <= 0) return;
 
-      // collect the booking interval (defines presence -> gaps between them are breaks)
+      // collect the booking interval (defines presence -> gaps between them are breaks) and
+      // the working-hours window (min start / max end). Bookings without a workorder count
+      // as well, so that window and breaks are derived from the same bookings.
       if (entry.start !== '' && entry.end !== '') {
         const list = dayIntervals.get(token) ?? [];
         list.push({ start: Utils.hoursFromTimestring(entry.start), end: Utils.hoursFromTimestring(entry.end) });
         dayIntervals.set(token, list);
+
+        const day = workingDay.get(token);
+        if (!day) {
+          workingDay.set(token, { start: entry.start, end: entry.end });
+        } else {
+          if (Utils.hoursFromTimestring(entry.start) < Utils.hoursFromTimestring(day.start)) { day.start = entry.start; }
+          if (Utils.hoursFromTimestring(entry.end) > Utils.hoursFromTimestring(day.end)) { day.end = entry.end; }
+        }
       }
 
       if (entry.workOrder === '') return; // missing workorder -> already warned, cannot import
@@ -432,17 +442,6 @@ export class Timesheetimport extends AbstractModule {
       }
       group.hours.set(token, (group.hours.get(token) ?? 0) + hours);
       sumHours += hours;
-
-      // track the working-hours window (min start / max end) for this weekday
-      if (entry.start !== '' && entry.end !== '') {
-        const day = workingDay.get(token);
-        if (!day) {
-          workingDay.set(token, { start: entry.start, end: entry.end });
-        } else {
-          if (Utils.hoursFromTimestring(entry.start) < Utils.hoursFromTimestring(day.start)) { day.start = entry.start; }
-          if (Utils.hoursFromTimestring(entry.end) > Utils.hoursFromTimestring(day.end)) { day.end = entry.end; }
-        }
-      }
     });
 
     // derive the break per weekday as the sum of the gaps between consecutive bookings
