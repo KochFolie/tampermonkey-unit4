@@ -187,7 +187,8 @@ export class SanityCheckTask extends ImportTask {
 
             const workingTime = day.workingTime - day.breaks;
             sumWorkingTime += workingTime;
-            sumBookedHours += (day.hours - day.breaks);
+            // day.hours already excludes the breaks (they are counted separately)
+            sumBookedHours += day.hours;
             if (workingTime > 10) {
                 errors.push(
                     "Working time issue: more than 10 hours of working time on date: " + dateStr
