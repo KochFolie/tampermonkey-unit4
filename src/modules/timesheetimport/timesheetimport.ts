@@ -66,6 +66,9 @@ export class Timesheetimport extends AbstractModule {
   // localStorage key for remembering how the user corrected invalid column-F workorders
   private static readonly ftzCorrectionStorageKey = 'ftzWorkOrderCorrections';
 
+  // sessionStorage key for the pasted text while the page reloads to open a row for the workorder lookup
+  private static readonly ftzPendingDialogStorageKey = 'ftzPendingDialog';
+
   private standardAddBtn!: HTMLButtonElement;
   private dialog!: HTMLElement;
   private dialogEntry!: HTMLTextAreaElement;
@@ -77,6 +80,8 @@ export class Timesheetimport extends AbstractModule {
   // bookings on weekdays the current timesheet does not contain (skipped by the import)
   private ftzOutsideEntries: FtZEntry[] = [];
   private ftzCorrectionInputs: Map<string, HTMLInputElement> = new Map();
+  // a row has already been opened for the workorder lookup, do not try again
+  private ftzLookupRowRequested = false;
   private buttonFailed!: HTMLButtonElement;
 
   // ----------------------------------------------------------------------
@@ -140,6 +145,9 @@ export class Timesheetimport extends AbstractModule {
         const importer = Importer.getInstance();
         WOImportTask.setSection(this.section);
         WOImportTask.setAddButton(this.standardAddBtn);
+        if (this.ftzDialog) {
+          this.restoreFtZDialog();
+        }
         this.runTasks();
       }
     }
@@ -285,6 +293,7 @@ export class Timesheetimport extends AbstractModule {
   // show FtZ Excel modal dialog
   private actionFtZExcelDialog() {
     this.ftzDialogEntry.value = '';
+    this.ftzLookupRowRequested = false;
     this.resetFtZView();
     this.ftzDialog.style.display = 'flex';
     this.ftzDialogEntry.focus();
@@ -306,6 +315,7 @@ export class Timesheetimport extends AbstractModule {
     this.ftzCorrectionContainer.style.display = 'none';
     this.ftzDialogEntry.style.display = '';
     this.ftzOkButton.innerHTML = "<span>Start Import</span>";
+    this.ftzOkButton.disabled = false;
   }
 
   // close modal dialog
@@ -345,6 +355,14 @@ export class Timesheetimport extends AbstractModule {
       // on first pass: show the review view if anything needs attention (missing, invalid or outside the week)
       const missing = this.ftzEntries.filter(e => e.workOrder === '' && !Timesheetimport.isBreakEntry(e));
       const invalid = this.distinctInvalidWorkOrders();
+
+      // the workorder lookup needs a time entry row in editing mode: open one (page reload),
+      // the dialog is restored afterwards with suggestions
+      if (invalid.length > 0 && !this.ftzLookupRowRequested && this.ftzLookupContext() === null) {
+        this.requestFtZLookupRow();
+        return;
+      }
+
       if (missing.length > 0 || invalid.length > 0 || this.ftzOutsideEntries.length > 0) {
         this.renderFtZCorrections(invalid, missing);
         return;
@@ -375,6 +393,55 @@ export class Timesheetimport extends AbstractModule {
 
     // all invalid workorders resolved -> start the real import
     this.startFtZImport();
+  }
+
+  // open a time entry row for the workorder lookup. Unit4 reloads the page for that, so the pasted
+  // text is kept in sessionStorage and restoreFtZDialog() reopens the dialog after the reload.
+  private requestFtZLookupRow() {
+    this.ftzLookupRowRequested = true;
+    sessionStorage.setItem(Timesheetimport.ftzPendingDialogStorageKey, this.ftzDialogEntry.value);
+
+    // prefer an existing workorder row, otherwise add an empty one (reused by the import later)
+    const row = [...this.section.querySelectorAll('tr.ListItem, tr.AltListItem')]
+      .find(r => r.querySelector('td[data-type="cell-workorder"]') && !Timesheetimport.isBreakRow(r));
+    const cell = row?.querySelector('td[data-type=cell-description] div.ww.ellipsis') as HTMLElement | null;
+
+    this.ftzDialogEntry.style.display = 'none';
+    this.ftzCorrectionContainer.textContent = 'Workorder-Suche wird vorbereitet, Unit4 lädt kurz neu …';
+    this.ftzCorrectionContainer.style.display = 'block';
+    this.ftzOkButton.disabled = true;
+
+    if (cell) {
+      cell.click();
+    } else {
+      this.standardAddBtn.dispatchEvent(new Event('click'));
+    }
+
+    // Unit4 did not reload: continue without suggestions (unless the dialog was cancelled meanwhile)
+    window.setTimeout(() => {
+      sessionStorage.removeItem(Timesheetimport.ftzPendingDialogStorageKey);
+      if (this.ftzDialog.style.display === 'none') {
+        return;
+      }
+      this.resetFtZView();
+      this.actionFtZExcelImport();
+    }, 5000);
+  }
+
+  // reopen the FtZ dialog with the pasted text after the reload triggered by requestFtZLookupRow()
+  private restoreFtZDialog() {
+    const text = sessionStorage.getItem(Timesheetimport.ftzPendingDialogStorageKey);
+    if (text === null) {
+      return;
+    }
+    sessionStorage.removeItem(Timesheetimport.ftzPendingDialogStorageKey);
+    if (Importer.getInstance().currentTask()) {
+      return; // an import is running, do not interfere
+    }
+    this.actionFtZExcelDialog();
+    this.ftzDialogEntry.value = text;
+    this.ftzLookupRowRequested = true;
+    this.actionFtZExcelImport();
   }
 
   // load the saved column-F -> corrected workorder map from localStorage
