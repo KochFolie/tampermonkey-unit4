@@ -55,6 +55,21 @@ metadata with devtarget.name (the windows based file URL).
 The target folder needs to exist, otherwise the dev build will run
 into an error.
 
+To use a different folder for your local checkout without changing
+package.json, create a `package.local.json` next to it (it is ignored
+by git) and override only the devtarget:
+
+```
+{
+  "extra": {
+    "devtarget": {
+      "folder": "C:/path/to/tampermonkey-unit4/dist",
+      "name": "file://C:/path/to/tampermonkey-unit4/dist"
+    }
+  }
+}
+```
+
 ## prepare Tampermonkey in your browser
 
 1. Allow Tampermonkey's access to local file URIs [tampermonkey/faq](https://tampermonkey.net/faq.php?ext=dhdg#Q204)
