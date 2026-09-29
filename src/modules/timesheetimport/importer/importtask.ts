@@ -18,6 +18,20 @@ export function setValueWithoutRequest(input: HTMLInputElement, value: string) {
   }
 }
 
+/**
+ * Check if a day column header belongs to the given day: either an English weekday token as used
+ * by the FtZ import (mon, tue, ...) or an ISO date as used by the JSON import (YYYY-MM-DD).
+ */
+export function headerMatchesDay(head: HTMLElement, day: string): boolean {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    const date = new Date(day);
+    const dateEN = (date.getMonth()+1) + "/" + date.getDate(); // EN format: M/D
+    const dateDE = date.getDate() + "." + String(date.getMonth()+1).padStart(2, '0'); // DE format: DD.MM.
+    return head.title.includes(dateEN) || head.title.includes(dateDE);
+  }
+  return (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase().startsWith(day);
+}
+
 export type FoundField = {
   field?: HTMLInputElement;
   value: string;

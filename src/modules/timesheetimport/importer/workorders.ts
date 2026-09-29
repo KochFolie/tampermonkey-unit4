@@ -1,5 +1,5 @@
 import { Utils } from "../../global/utils";
-import { FoundField, ImportTask, ImportTaskResult, setValueWithoutRequest } from "./importtask";
+import { FoundField, headerMatchesDay, ImportTask, ImportTaskResult, setValueWithoutRequest } from "./importtask";
 
 export type WorkOrder = {
     workOrder: string;
@@ -30,8 +30,8 @@ export abstract class WOImportTask extends ImportTask {
                 return new DescriptionImportTask(taskData.groupId, taskData.workOrder);
             case 'HoursImportTask':
                 return new HoursImportTask(taskData.groupId, taskData.workOrder, new Date(taskData.date), taskData.value);
-            case 'FtZRowHoursImportTask':
-                return new FtZRowHoursImportTask(taskData.groupId, taskData.workOrder, taskData.hours);
+            case 'RowHoursImportTask':
+                return new RowHoursImportTask(taskData.groupId, taskData.workOrder, taskData.hours);
             case 'StartBreakRowImportTask':
                 return new StartBreakRowImportTask(taskData.groupId);
             case 'WorkOrderSummaryTask':
@@ -303,13 +303,13 @@ export class HoursImportTask extends WOFieldImportTask {
 
 }
 
-// FtZ variant: enters the hours of all days into the active row at once. The values are only
-// marked dirty and sent with the next request (Add for the next row or Close editing mode),
-// instead of one page reload per day.
-export class FtZRowHoursImportTask extends WOImportTask {
-    // English weekday token as used in the grid headers (mon, tue, ...) -> hours
-    public hours: { [weekday: string]: number };
-    constructor(groupId: string, workOrder: WorkOrder, hours: { [weekday: string]: number }) {
+// enters the hours of all days into the active row at once. The values are only marked dirty and
+// sent with the next request (Add for the next row or Close editing mode), instead of one page
+// reload per day.
+export class RowHoursImportTask extends WOImportTask {
+    // day (weekday token like "mon" or ISO date, see headerMatchesDay) -> hours
+    public hours: { [day: string]: number };
+    constructor(groupId: string, workOrder: WorkOrder, hours: { [day: string]: number }) {
         super(groupId, workOrder);
         this.hours = hours;
     }
@@ -325,14 +325,13 @@ export class FtZRowHoursImportTask extends WOImportTask {
       const cells = await this.waitForElements('.timeentry-section .EditRow [data-type=cell-weekday]');
 
       const missing: string[] = [];
-      Object.entries(this.hours).forEach(([weekday, hours]) => {
-        // match the day column by its English weekday token (Mon, Tue, ...), no date needed
-        const i = headers.findIndex(head => (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase().startsWith(weekday));
+      Object.entries(this.hours).forEach(([day, hours]) => {
+        const i = headers.findIndex(head => headerMatchesDay(head, day));
         const input = i >= 0 ? cells[i]?.querySelector('.InputCell input') as HTMLInputElement | null : null;
         if (input) {
           setValueWithoutRequest(input, Utils.toLocaleString(hours));
         } else {
-          missing.push(weekday);
+          missing.push(day);
         }
       });
       return missing.length > 0 ? this.failure(`Could not find hour field for ${missing.join(', ')}`) : this.next();

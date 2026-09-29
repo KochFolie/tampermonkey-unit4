@@ -3,8 +3,8 @@ import { AbstractModule } from '../AbstractModule';
 import { Utils } from "../global/utils";
 import { Importer } from './importer/importer';
 import { CloseEditingModeTask, SanityCheckTask } from "./importer/importtask";
-import { FtZWorkingRowImportTask, WorkingEndImportTask, WorkingStartImportTask } from "./importer/workinghours";
-import { ActivityImportTask, DescriptionImportTask, FtZRowHoursImportTask, FtZStartWorkOrderImportTask, HoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
+import { WorkingEndImportTask, WorkingRowImportTask, WorkingStartImportTask } from "./importer/workinghours";
+import { ActivityImportTask, DescriptionImportTask, FtZStartWorkOrderImportTask, HoursImportTask, RowHoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
 import './timesheetimport.less';
 
 export type ImportWorkingHoursDay = {
@@ -523,8 +523,8 @@ export class Timesheetimport extends AbstractModule {
         starts[token] = day.start;
         ends[token] = day.end;
       });
-      importer.addTask(new FtZWorkingRowImportTask('ftz-workinghours|start', "start", starts));
-      importer.addTask(new FtZWorkingRowImportTask('ftz-workinghours|end', "end", ends));
+      importer.addTask(new WorkingRowImportTask('ftz-workinghours|start', "start", starts));
+      importer.addTask(new WorkingRowImportTask('ftz-workinghours|end', "end", ends));
     }
 
     importer.addTask(new CloseEditingModeTask());
@@ -534,7 +534,7 @@ export class Timesheetimport extends AbstractModule {
       importer.addTask(new FtZStartWorkOrderImportTask(groupId, group.wo));
       importer.addTask(new WorkOrderImportTask(groupId, group.wo));
       importer.addTask(new DescriptionImportTask(groupId, group.wo));
-      importer.addTask(new FtZRowHoursImportTask(groupId, group.wo, Object.fromEntries(group.hours)));
+      importer.addTask(new RowHoursImportTask(groupId, group.wo, Object.fromEntries(group.hours)));
     });
 
     importer.addTask(new CloseEditingModeTask());
@@ -544,7 +544,7 @@ export class Timesheetimport extends AbstractModule {
       const breakGroupId = 'ftz-breaks';
       const breakWo: WorkOrder = { workOrder: '', activity: '999', timeCode: '', description: 'Internal - Break Time' };
       importer.addTask(new StartBreakRowImportTask(breakGroupId));
-      importer.addTask(new FtZRowHoursImportTask(breakGroupId, breakWo, Object.fromEntries(breaksByDay)));
+      importer.addTask(new RowHoursImportTask(breakGroupId, breakWo, Object.fromEntries(breaksByDay)));
       importer.addTask(new CloseEditingModeTask());
     }
 

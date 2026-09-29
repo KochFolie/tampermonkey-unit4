@@ -1,5 +1,5 @@
 import { trans } from "../../global/trans";
-import { ImportTask, ImportTaskResult, setValueWithoutRequest } from "./importtask";
+import { headerMatchesDay, ImportTask, ImportTaskResult, setValueWithoutRequest } from "./importtask";
 
 export type WorkingHours = {
   date: string;
@@ -19,8 +19,8 @@ export abstract class WHImportTask extends ImportTask {
                 return new WorkingStartImportTask(taskData.groupId, new Date(taskData.date), taskData.value);
             case 'WorkingEndImportTask':
                 return new WorkingEndImportTask(taskData.groupId, new Date(taskData.date), taskData.value);
-            case 'FtZWorkingRowImportTask':
-                return new FtZWorkingRowImportTask(taskData.groupId, taskData.type, taskData.times);
+            case 'WorkingRowImportTask':
+                return new WorkingRowImportTask(taskData.groupId, taskData.type, taskData.times);
         }
     }
 
@@ -106,13 +106,12 @@ export class WorkingEndImportTask extends WHImportTask {
     }
 }
 
-// FtZ variant: fills the whole From (or To) row at once, matching the day columns by their weekday
-// token instead of a date. Only activating the row reloads the page; the values are sent with the
-// next request (activating the other row or closing the editing mode).
-export class FtZWorkingRowImportTask extends WHImportTask {
-    // English weekday token as used in the grid headers (mon, tue, ...) -> time (HH:MM)
-    public times: { [weekday: string]: string };
-    constructor(groupId: string, type: "start" | "end", times: { [weekday: string]: string }) {
+// fills the whole From (or To) row at once. Only activating the row reloads the page; the values
+// are sent with the next request (activating the other row or closing the editing mode).
+export class WorkingRowImportTask extends WHImportTask {
+    // day (weekday token like "mon" or ISO date, see headerMatchesDay) -> time (HH:MM)
+    public times: { [day: string]: string };
+    constructor(groupId: string, type: "start" | "end", times: { [day: string]: string }) {
         super(groupId, new Date(0), type, '');
         this.times = times;
     }
@@ -127,13 +126,12 @@ export class FtZWorkingRowImportTask extends WHImportTask {
       // first row: From, second row: To
       const row = rows[this.type === "start" ? 0 : 1];
 
-      const cells: { [weekday: string]: HTMLElement } = {};
+      const cells: { [day: string]: HTMLElement } = {};
       for (var i=0 ; i<headers.length ; ++i) {
-        const text = (headers[i].textContent ?? '').replace(/[_.\s]/g, '').toLowerCase();
-        const weekday = Object.keys(this.times).find(w => text.startsWith(w));
+        const day = Object.keys(this.times).find(d => headerMatchesDay(headers[i], d));
         const cell = row?.querySelector('td:nth-of-type(' + (i+1) + ')') as HTMLElement | null;
-        if (weekday && cell) {
-          cells[weekday] = cell;
+        if (day && cell) {
+          cells[day] = cell;
         }
       }
       const missing = Object.keys(this.times).filter(w => !cells[w]);
@@ -148,10 +146,10 @@ export class FtZWorkingRowImportTask extends WHImportTask {
         return this.retryAfterReload();
       }
 
-      Object.entries(cells).forEach(([weekday, cell]) => {
+      Object.entries(cells).forEach(([day, cell]) => {
         const input = cell.querySelector('.InputCell input') as HTMLInputElement | null;
         if (input) {
-          setValueWithoutRequest(input, this.formatLocalTime(this.times[weekday], input));
+          setValueWithoutRequest(input, this.formatLocalTime(this.times[day], input));
         }
       });
       return missing.length > 0 ? this.failure(trans('error_date_cell_not_found', missing.join(', '))) : this.next();
