@@ -57,19 +57,10 @@ The target folder needs to exist, otherwise the dev build will run
 into an error.
 
 To use a different folder for your local checkout without changing
-package.json, create a `package.local.json` next to it (it is ignored
-by git) and override only the devtarget:
-
-```
-{
-  "extra": {
-    "devtarget": {
-      "folder": "C:/path/to/tampermonkey-unit4/dist",
-      "name": "file://C:/path/to/tampermonkey-unit4/dist"
-    }
-  }
-}
-```
+package.json, copy `package.local.example.json` to `package.local.json`
+(it is ignored by git) and adjust it. It overrides the devtarget and,
+optionally, the version shown in Tampermonkey for the dev build.
+Restart `npm run dev` after changing it.
 
 ## prepare Tampermonkey in your browser
 

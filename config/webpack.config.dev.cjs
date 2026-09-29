@@ -8,11 +8,14 @@ const { UserScriptMetaDataPlugin } = require('userscript-metadata-webpack-plugin
 const metadata = require('./metadata.cjs')
 const webpackConfig = require('./webpack.config.base.cjs')
 
-// optional, not versioned package.local.json to override the dev target for a local checkout,
-// e.g. { "extra": { "devtarget": { "folder": "C:/path/to/dist", "name": "file://C:/path/to/dist" } } }
+// optional, not versioned package.local.json to override the dev target and the userscript
+// version for a local checkout, see package.local.example.json
 const localFile = path.resolve(__dirname, '../package.local.json')
 const local = fs.existsSync(localFile) ? JSON.parse(fs.readFileSync(localFile, 'utf8')) : {}
 const devtarget = { ...extra.devtarget, ...(local.extra?.devtarget ?? {}) }
+if (local.version) {
+  metadata.version = local.version
+}
 
 metadata.name = metadata.name + " (debug)";
 metadata.require.push(
