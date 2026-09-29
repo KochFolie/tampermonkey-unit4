@@ -364,7 +364,10 @@ export class RowHoursImportTask extends WOImportTask {
         const i = headers.findIndex(head => headerMatchesDay(head, day));
         const input = i >= 0 ? cells[i]?.querySelector('.InputCell input') as HTMLInputElement | null : null;
         if (input) {
-          setValueWithoutRequest(input, Utils.toLocaleString(hours));
+          // leave unchanged values alone (e.g. zeros in a new row on a repeated import)
+          if (Math.abs((Utils.toNumber(input.value) || 0) - hours) > 0.001) {
+            setValueWithoutRequest(input, Utils.toLocaleString(hours));
+          }
         } else {
           missing.push(day);
         }

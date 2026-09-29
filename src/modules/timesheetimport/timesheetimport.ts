@@ -565,12 +565,17 @@ export class Timesheetimport extends AbstractModule {
 
     importer.addTask(new CloseEditingModeTask());
 
+    // all days of the Excel data: rows get hours for each of them (0 if none), so that hours moved
+    // to another day are cleared in existing rows on a repeated import
+    const withAllDays = (hours: Map<string, number>) =>
+      Object.fromEntries([...dayIntervals.keys()].map(token => [token, hours.get(token) ?? 0]));
+
     groups.forEach((group, key) => {
       const groupId = ['ftz', key].join('|');
       importer.addTask(new EmptyRowStartWorkOrderImportTask(groupId, group.wo));
       importer.addTask(new WorkOrderImportTask(groupId, group.wo));
       importer.addTask(new DescriptionImportTask(groupId, group.wo));
-      importer.addTask(new RowHoursImportTask(groupId, group.wo, Object.fromEntries(group.hours)));
+      importer.addTask(new RowHoursImportTask(groupId, group.wo, withAllDays(group.hours)));
     });
 
     importer.addTask(new CloseEditingModeTask());
@@ -580,7 +585,7 @@ export class Timesheetimport extends AbstractModule {
       const breakGroupId = 'ftz-breaks';
       const breakWo: WorkOrder = { workOrder: '', activity: '999', timeCode: '', description: 'Internal - Break Time' };
       importer.addTask(new StartBreakRowImportTask(breakGroupId));
-      importer.addTask(new RowHoursImportTask(breakGroupId, breakWo, Object.fromEntries(breaksByDay)));
+      importer.addTask(new RowHoursImportTask(breakGroupId, breakWo, withAllDays(breaksByDay)));
       importer.addTask(new CloseEditingModeTask());
     }
 
