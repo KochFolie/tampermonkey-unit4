@@ -174,6 +174,21 @@ export class SanityCheckTask extends ImportTask {
         return "Final sanity check";
     }
 
+    // expected hours of this timesheet from the "Normal hours" field of the timesheet header
+    // (already reduced by bank holidays, part-time and month boundaries), 40 if not available
+    private static normalHours(): number {
+        for (const td of ImportTask.section.ownerDocument.querySelectorAll('td.label')) {
+            if (td.textContent?.includes('Normal hours')) {
+                const input = td.nextElementSibling?.querySelector('input[type="text"]') as HTMLInputElement | null;
+                const hours = input ? Utils.toNumber(input.value) : NaN;
+                if (!isNaN(hours)) {
+                    return hours;
+                }
+            }
+        }
+        return 40;
+    }
+
     async run(): Promise<ImportTaskResult> {
         const errors: string[] = [];
         var sumWorkingTime = 0;
@@ -198,11 +213,12 @@ export class SanityCheckTask extends ImportTask {
                 errors.push("Working time issue: no working time on date: " + dateStr);
             }
         });
-        if (sumWorkingTime < 40) {
-            errors.push("Working time issue: total working time less than 40 hours: " + sumWorkingTime);
+        const normalHours = SanityCheckTask.normalHours();
+        if (sumWorkingTime < normalHours) {
+            errors.push("Working time issue: total working time less than " + normalHours + " hours (normal hours): " + sumWorkingTime);
         }
-        if (sumBookedHours < 40) {
-            errors.push("Booked hours issue: total booked hours less than 40 hours: " + sumBookedHours);
+        if (sumBookedHours < normalHours) {
+            errors.push("Booked hours issue: total booked hours less than " + normalHours + " hours (normal hours): " + sumBookedHours);
         }
 
         if (errors.length > 0) {
