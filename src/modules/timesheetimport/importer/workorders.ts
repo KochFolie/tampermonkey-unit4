@@ -1,5 +1,5 @@
 import { Utils } from "../../global/utils";
-import { FoundField, ImportTask, ImportTaskResult } from "./importtask";
+import { FoundField, ImportTask, ImportTaskResult, setValueWithoutRequest } from "./importtask";
 
 export type WorkOrder = {
     workOrder: string;
@@ -30,8 +30,8 @@ export abstract class WOImportTask extends ImportTask {
                 return new DescriptionImportTask(taskData.groupId, taskData.workOrder);
             case 'HoursImportTask':
                 return new HoursImportTask(taskData.groupId, taskData.workOrder, new Date(taskData.date), taskData.value);
-            case 'FtZHoursImportTask':
-                return new FtZHoursImportTask(taskData.groupId, taskData.workOrder, taskData.weekday, taskData.value);
+            case 'FtZRowHoursImportTask':
+                return new FtZRowHoursImportTask(taskData.groupId, taskData.workOrder, taskData.hours);
             case 'StartBreakRowImportTask':
                 return new StartBreakRowImportTask(taskData.groupId);
             case 'WorkOrderSummaryTask':
@@ -303,35 +303,40 @@ export class HoursImportTask extends WOFieldImportTask {
 
 }
 
-export class FtZHoursImportTask extends WOFieldImportTask {
-    // English weekday token as used in the grid headers: mon/tue/wed/thu/fri/sat/sun
-    private weekday: string;
-    constructor(groupId: string, workOrder: WorkOrder, weekday: string, hours: number) {
-        super(groupId, workOrder, 'cell-weekday', Utils.toLocaleString(hours), true);
-        this.weekday = weekday;
+// FtZ variant: enters the hours of all days into the active row at once. The values are only
+// marked dirty and sent with the next request (Add for the next row or Close editing mode),
+// instead of one page reload per day.
+export class FtZRowHoursImportTask extends WOImportTask {
+    // English weekday token as used in the grid headers (mon, tue, ...) -> hours
+    public hours: { [weekday: string]: number };
+    constructor(groupId: string, workOrder: WorkOrder, hours: { [weekday: string]: number }) {
+        super(groupId, workOrder);
+        this.hours = hours;
     }
 
     actionDescription(): string {
-        return "Enter hours for " + this.workOrder.workOrder + " on " + this.weekday;
+        return "Enter hours for " + (this.workOrder.workOrder || this.workOrder.description) + " on " + Object.keys(this.hours).join(', ');
     }
 
-    protected async lookupField(row: HTMLElement): Promise<FoundField|null> {
+    public async run(): Promise<ImportTaskResult> {
       // scope to the time entry grid: the working hours grid uses the same cell-weekday markup
       // and would otherwise receive the hours whenever its From/To row is in editing mode
       const headers = await this.waitForElements('.timeentry-section th[data-type=cell-weekday]');
       const cells = await this.waitForElements('.timeentry-section .EditRow [data-type=cell-weekday]');
 
-      // match the day column by its English weekday token (Mon, Tue, ...), no date needed
-      for(var i=0 ; i<headers.length ; ++i) {
-        const head = headers[i] as HTMLElement;
-        const text = (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase();
-        if (text.startsWith(this.weekday)) {
-          return await this.fieldElement(cells[i] as HTMLElement, 'cell-weekday['+i+']');
+      const missing: string[] = [];
+      Object.entries(this.hours).forEach(([weekday, hours]) => {
+        // match the day column by its English weekday token (Mon, Tue, ...), no date needed
+        const i = headers.findIndex(head => (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase().startsWith(weekday));
+        const input = i >= 0 ? cells[i]?.querySelector('.InputCell input') as HTMLInputElement | null : null;
+        if (input) {
+          setValueWithoutRequest(input, Utils.toLocaleString(hours));
+        } else {
+          missing.push(weekday);
         }
-      }
-      return null;
+      });
+      return missing.length > 0 ? this.failure(`Could not find hour field for ${missing.join(', ')}`) : this.next();
     }
-
 }
 
 export class WorkOrderSummaryTask extends ImportTask {

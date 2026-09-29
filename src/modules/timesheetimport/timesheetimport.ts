@@ -4,7 +4,7 @@ import { Utils } from "../global/utils";
 import { Importer } from './importer/importer';
 import { CloseEditingModeTask, SanityCheckTask } from "./importer/importtask";
 import { FtZWorkingRowImportTask, WorkingEndImportTask, WorkingStartImportTask } from "./importer/workinghours";
-import { ActivityImportTask, DescriptionImportTask, FtZHoursImportTask, FtZStartWorkOrderImportTask, HoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
+import { ActivityImportTask, DescriptionImportTask, FtZRowHoursImportTask, FtZStartWorkOrderImportTask, HoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
 import './timesheetimport.less';
 
 export type ImportWorkingHoursDay = {
@@ -534,9 +534,7 @@ export class Timesheetimport extends AbstractModule {
       importer.addTask(new FtZStartWorkOrderImportTask(groupId, group.wo));
       importer.addTask(new WorkOrderImportTask(groupId, group.wo));
       importer.addTask(new DescriptionImportTask(groupId, group.wo));
-      group.hours.forEach((hours, token) => {
-        importer.addTask(new FtZHoursImportTask(groupId, group.wo, token, hours));
-      });
+      importer.addTask(new FtZRowHoursImportTask(groupId, group.wo, Object.fromEntries(group.hours)));
     });
 
     importer.addTask(new CloseEditingModeTask());
@@ -546,9 +544,7 @@ export class Timesheetimport extends AbstractModule {
       const breakGroupId = 'ftz-breaks';
       const breakWo: WorkOrder = { workOrder: '', activity: '999', timeCode: '', description: 'Internal - Break Time' };
       importer.addTask(new StartBreakRowImportTask(breakGroupId));
-      breaksByDay.forEach((hours, token) => {
-        importer.addTask(new FtZHoursImportTask(breakGroupId, breakWo, token, hours));
-      });
+      importer.addTask(new FtZRowHoursImportTask(breakGroupId, breakWo, Object.fromEntries(breaksByDay)));
       importer.addTask(new CloseEditingModeTask());
     }
 
