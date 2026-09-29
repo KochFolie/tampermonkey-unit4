@@ -4,7 +4,7 @@ import { Utils } from "../global/utils";
 import { Importer } from './importer/importer';
 import { CloseEditingModeTask, SanityCheckTask } from "./importer/importtask";
 import { WorkingRowImportTask } from "./importer/workinghours";
-import { ActivityImportTask, DescriptionImportTask, FtZStartWorkOrderImportTask, RowHoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
+import { ActivityImportTask, DescriptionImportTask, EmptyRowStartWorkOrderImportTask, RowHoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
 import './timesheetimport.less';
 
 export type ImportWorkingHoursDay = {
@@ -567,7 +567,7 @@ export class Timesheetimport extends AbstractModule {
 
     groups.forEach((group, key) => {
       const groupId = ['ftz', key].join('|');
-      importer.addTask(new FtZStartWorkOrderImportTask(groupId, group.wo));
+      importer.addTask(new EmptyRowStartWorkOrderImportTask(groupId, group.wo));
       importer.addTask(new WorkOrderImportTask(groupId, group.wo));
       importer.addTask(new DescriptionImportTask(groupId, group.wo));
       importer.addTask(new RowHoursImportTask(groupId, group.wo, Object.fromEntries(group.hours)));
@@ -1056,7 +1056,9 @@ export class Timesheetimport extends AbstractModule {
       data.forEach((entry: any) => {
         // group all tasks for the same work order together
         const groupId = ["workorders", entry.timeCode, entry.workOrder, entry.activity, entry.description].join('|');
-        importer.addTask(new StartWorkOrderImportTask(groupId, entry));
+        // normal hours may reuse the empty row left by the workorder lookup of the review view
+        const normalHours = (entry.timeCode ?? '0') === '0' || entry.timeCode === '';
+        importer.addTask(normalHours ? new EmptyRowStartWorkOrderImportTask(groupId, entry) : new StartWorkOrderImportTask(groupId, entry));
         importer.addTask(new TimecodeImportTask(groupId, entry));
         importer.addTask(new WorkOrderImportTask(groupId, entry));
         importer.addTask(new ActivityImportTask(groupId, entry));

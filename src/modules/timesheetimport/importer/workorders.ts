@@ -18,8 +18,8 @@ export abstract class WOImportTask extends ImportTask {
         switch (taskData.task) {
             case 'StartWorkOrderImportTask':
                 return new StartWorkOrderImportTask(taskData.groupId, taskData.workOrder);
-            case 'FtZStartWorkOrderImportTask':
-                return new FtZStartWorkOrderImportTask(taskData.groupId, taskData.workOrder);
+            case 'EmptyRowStartWorkOrderImportTask':
+                return new EmptyRowStartWorkOrderImportTask(taskData.groupId, taskData.workOrder);
             case 'TimecodeImportTask':
                 return new TimecodeImportTask(taskData.groupId, taskData.workOrder);
             case 'WorkOrderImportTask':
@@ -114,9 +114,10 @@ export class StartWorkOrderImportTask extends WOImportTask {
     }
 }
 
-// FtZ variant: reuse an empty time entry row before adding a new one. The FtZ dialog adds such a
-// row to get a context for Unit4's workorder lookup; Unit4 keeps it with an "Illegal value" warning.
-export class FtZStartWorkOrderImportTask extends StartWorkOrderImportTask {
+// reuse an empty time entry row before adding a new one. The import dialog adds such a row to get
+// a context for Unit4's workorder lookup; Unit4 keeps it with an "Illegal value" warning.
+// Only for normal hours (time code 0), as the empty row is prefilled with that time code.
+export class EmptyRowStartWorkOrderImportTask extends StartWorkOrderImportTask {
     public async run(): Promise<ImportTaskResult> {
         const rows = await this.waitForElements('.timeentry-section tr.ListItem, .timeentry-section tr.AltListItem, .timeentry-section tr.EditRow');
         for (const row of rows) {
