@@ -54,8 +54,11 @@ with it.
 # What gets imported
 
 * **Work orders and descriptions**: the column "Echte Workorder" is used. Bookings with the
-  same work order and description are combined into one row, the hours are summed up per
-  day.
+  same work order, activity and description are combined into one row, the hours are summed
+  up per day.
+* **Activity**: by default, Unit4 sets the default activity of the work order (usually 100).
+  To book a different activity, add it in parentheses behind the work order in
+  "Echte Workorder", e.g. `950000-10000 (908)` to book overtime.
 * **Working hours (From/To)**: the earliest start and the latest end of each day.
 * **Breaks**: the gaps between the bookings of a day, entered into the break row
   (activity 999) that Unit4 inserts automatically. Rows marked as "Pause" in the Excel are
@@ -70,7 +73,8 @@ ticket. You can change this with the configuration option "FtZ description rules
 array of `{regex, template}` rules, the first rule whose regex matches the ticket wins.
 
 Available placeholders: `{{Weekday}}`, `{{Start}}`, `{{End}}`, `{{Duration}}`,
-`{{WorkOrder}}`, `{{WorkOrderInput}}`, `{{Ticket}}`, `{{Comment}}`.
+`{{WorkOrder}}` (without an activity in parentheses), `{{WorkOrderInput}}`, `{{Ticket}}`,
+`{{Comment}}`.
 
 Example: use only the comment for internal tickets, ticket and comment otherwise:
 
@@ -87,7 +91,7 @@ processing the timesheets afterwards.
 # Importing again
 
 You can import the same week again, e.g. after correcting the Excel: rows that already
-exist (same work order and description) are updated instead of added a second time, and
+exist (same work order, activity and description) are updated instead of added a second time, and
 hours that moved to another day are cleared.
 
 If you changed the **work order or description** of a booking, the import cannot know that
