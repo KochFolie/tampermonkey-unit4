@@ -3,8 +3,8 @@ import { AbstractModule } from '../AbstractModule';
 import { Utils } from "../global/utils";
 import { Importer } from './importer/importer';
 import { CloseEditingModeTask, SanityCheckTask } from "./importer/importtask";
-import { WorkingEndImportTask, WorkingRowImportTask, WorkingStartImportTask } from "./importer/workinghours";
-import { ActivityImportTask, DescriptionImportTask, FtZStartWorkOrderImportTask, HoursImportTask, RowHoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
+import { WorkingRowImportTask } from "./importer/workinghours";
+import { ActivityImportTask, DescriptionImportTask, FtZStartWorkOrderImportTask, RowHoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
 import './timesheetimport.less';
 
 export type ImportWorkingHoursDay = {
@@ -975,12 +975,13 @@ export class Timesheetimport extends AbstractModule {
       // close all editing modes before import (so that no edit row is still active)
       importer.addTask(new CloseEditingModeTask());
 
-      // import working hours
+      // import working hours: the whole From row first, then the whole To row,
+      // so that only switching between the rows reloads the page
+      const starts: { [date: string]: string } = {};
+      const ends: { [date: string]: string } = {};
       Object.entries(days).forEach(([dateStr, day]: [string, ImportWorkingHoursDay]) => {
-        const date = new Date(dateStr);
-        const groupId = ["workinghours", dateStr].join('|');
-        importer.addTask(new WorkingStartImportTask(groupId, date, day.start));
-        importer.addTask(new WorkingEndImportTask(groupId, date, day.end));
+        starts[dateStr] = day.start;
+        ends[dateStr] = day.end;
         // update daily working time for sanity check
         if (!daily[dateStr]) {
             daily[dateStr] = { hours: 0, breaks: 0, workingTime: 0 };
@@ -988,6 +989,10 @@ export class Timesheetimport extends AbstractModule {
         // calculate working time based on start and end time (format: HH:MM)
         daily[dateStr].workingTime = Utils.difference(day.start, day.end);
       });
+      if (Object.keys(days).length > 0) {
+        importer.addTask(new WorkingRowImportTask('workinghours|start', "start", starts));
+        importer.addTask(new WorkingRowImportTask('workinghours|end', "end", ends));
+      }
 
       // close all editing modes after storing working hours
       importer.addTask(new CloseEditingModeTask());
@@ -1001,9 +1006,11 @@ export class Timesheetimport extends AbstractModule {
         importer.addTask(new WorkOrderImportTask(groupId, entry));
         importer.addTask(new ActivityImportTask(groupId, entry));
         importer.addTask(new DescriptionImportTask(groupId, entry));
+        // enter the hours of all days of this entry at once (sent with the next request)
+        const hoursByDate: { [date: string]: number } = {};
         entry.time.forEach((timeEntry: any) => {
           const hours = Utils.toNumber(timeEntry.hours);
-          importer.addTask(new HoursImportTask(groupId, entry, new Date(timeEntry.date), hours));
+          hoursByDate[timeEntry.date] = hours;
           // sum hours and breaks
           sumHours += hours;
           if (entry.timeCode === "99") {
@@ -1019,6 +1026,7 @@ export class Timesheetimport extends AbstractModule {
               daily[timeEntry.date].hours += hours;
           }
         });
+        importer.addTask(new RowHoursImportTask(groupId, entry, hoursByDate));
       });
 
       // close all editing modes at the end
