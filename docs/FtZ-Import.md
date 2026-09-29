@@ -83,7 +83,8 @@ working hours (From/To) nor for the breaks, and the sanity check does not count 
 | `940100-10025` | DE2 sick leave                                                             |
 
 Example: if you worked from 9:00 to 17:00 and book overtime compensation from 17:00 to 17:30,
-the working hours are 9:00 - 17:00. A day with vacation only gets no working hours at all.
+the working hours are 9:00 - 17:00. A day with vacation or sick leave only gets the working hours
+00:00 - 00:00 (no presence) instead of Unit4's default times.
 
 If your country or company uses other work orders, adjust the list with the configuration
 option "Work orders not counting as presence", one rule per line:

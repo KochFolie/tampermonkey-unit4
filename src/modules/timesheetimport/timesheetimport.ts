@@ -590,10 +590,13 @@ export class Timesheetimport extends AbstractModule {
 
     // import the working hours (From/To) from the Excel start/end times: the whole From row first,
     // then the whole To row, so that only switching between the rows reloads the page
-    if (workingDay.size > 0) {
+    if (importDays.size > 0) {
       const starts: { [weekday: string]: string } = {};
       const ends: { [weekday: string]: string } = {};
-      workingDay.forEach((day, token) => {
+      importDays.forEach(token => {
+        // days with non-presence bookings only (sick leave, vacation, ...) get no presence (00:00 - 00:00)
+        // instead of keeping Unit4's default working hours
+        const day = workingDay.get(token) ?? { start: '00:00', end: '00:00' };
         starts[token] = day.start;
         ends[token] = day.end;
       });
