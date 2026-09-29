@@ -22,6 +22,7 @@ export const DEFAULT_NON_PRESENCE_RULES: string[] = [
   '950000-10000',   // DE3 internal: vacation (900), bank holiday (906), child sick (905), overtime compensation (908), ...
   '950100-10025',   // DE3 sick leave (moved away from 950000-10000)
   '940000-10000',   // DE2 internal, assumed to work like 950000-10000 in DE3
+  '940100-10025',   // DE2 sick leave, assumed to work like 950100-10025 in DE3
 ];
 
 type NonPresenceRule = { exclude: boolean, workOrder: RegExp, activity: RegExp | null };

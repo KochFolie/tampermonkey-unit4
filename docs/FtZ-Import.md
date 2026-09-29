@@ -80,6 +80,7 @@ working hours (From/To) nor for the breaks, and the sanity check does not count 
 | `950000-10000` | DE3 internal: vacation (900), bank holiday (906), child sick (905), overtime compensation (908), ... |
 | `950100-10025` | DE3 sick leave                                                             |
 | `940000-10000` | DE2 internal                                                               |
+| `940100-10025` | DE2 sick leave                                                             |
 
 Example: if you worked from 9:00 to 17:00 and book overtime compensation from 17:00 to 17:30,
 the working hours are 9:00 - 17:00. A day with vacation only gets no working hours at all.
