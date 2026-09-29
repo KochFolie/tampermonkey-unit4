@@ -126,9 +126,12 @@ export class FtZStartWorkOrderImportTask extends StartWorkOrderImportTask {
             }
             // only a completely empty row: no workorder, no description and no hours
             // (rows with a time code only, e.g. absences, have no workorder either)
-            const text = (td: Element | null) => ((td?.querySelector('.InputCell input') as HTMLInputElement | null)?.value ?? td?.textContent ?? '').trim();
-            const hasHours = [...row.querySelectorAll('td[data-type="cell-weekday"]')].some(td => (Utils.toNumber(text(td)) || 0) !== 0);
-            if (text(cell) !== '' || text(row.querySelector('td[data-type="cell-description"]')) !== '' || hasHours) {
+            // read the value only (input or value div), not the description the timeentry module
+            // appends to workorder cells ("always show descriptions")
+            const text = (td: Element | null, valueDiv: string) =>
+                ((td?.querySelector('.InputCell input') as HTMLInputElement | null)?.value ?? td?.querySelector(valueDiv)?.textContent ?? '').trim();
+            const hasHours = [...row.querySelectorAll('td[data-type="cell-weekday"]')].some(td => (Utils.toNumber(text(td, 'div.ww')) || 0) !== 0);
+            if (text(cell, 'div.ww.ellipsis') !== '' || text(row.querySelector('td[data-type="cell-description"]'), 'div.ww.ellipsis') !== '' || hasHours) {
                 continue;
             }
             if (row.classList.contains('EditRow')) {
