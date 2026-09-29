@@ -339,14 +339,18 @@ export class Timesheetimport extends AbstractModule {
     } else {
       // phase 2: apply the user corrections to the stored entries
       this.ftzCorrectionInputs.forEach((input, original) => {
-        const corrected = input.value.trim();
-        // remember valid corrections so the field is prefilled next time
-        if (corrected !== original && Timesheetimport.workOrderPattern.test(corrected)) {
-          this.saveFtZCorrection(original, corrected);
+        // the correction may carry an activity as well, e.g. "950000-10000 (908)"
+        const corrected = Timesheetimport.splitFtZWorkOrder(input.value);
+        // remember valid corrections (incl. activity) so the field is prefilled next time
+        if (input.value.trim() !== original && Timesheetimport.workOrderPattern.test(corrected.workOrder)) {
+          this.saveFtZCorrection(original, input.value.trim());
         }
         this.reviewEntries().forEach(entry => {
           if (entry.workOrder === original) {
-            entry.workOrder = corrected;
+            entry.workOrder = corrected.workOrder;
+            if (corrected.activity !== '') {
+              entry.activity = corrected.activity;
+            }
           }
         });
       });
@@ -377,7 +381,7 @@ export class Timesheetimport extends AbstractModule {
   }
 
   // entries whose workorders are reviewed: the JSON entries or the FtZ bookings
-  private reviewEntries(): { workOrder: string }[] {
+  private reviewEntries(): { workOrder: string, activity?: string }[] {
     return this.jsonReview ? this.jsonReview.data : this.ftzEntries;
   }
 
@@ -802,7 +806,7 @@ export class Timesheetimport extends AbstractModule {
     if (invalidWorkOrders.length > 0) {
       const heading = document.createElement("p");
       heading.classList.add("ftzCorrection__heading");
-      heading.textContent = `${invalidWorkOrders.length} ungültige Workorder(s) gefunden. Bitte im Format 950100-10005 korrigieren:`;
+      heading.textContent = `${invalidWorkOrders.length} ungültige Workorder(s) gefunden. Bitte im Format 950100-10005 korrigieren, optional mit Aktivität, z. B. 950000-10000 (908):`;
       this.ftzCorrectionContainer.appendChild(heading);
 
       invalidWorkOrders.forEach(wo => {
