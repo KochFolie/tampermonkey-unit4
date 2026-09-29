@@ -960,8 +960,16 @@ export class Timesheetimport extends AbstractModule {
 
   // start the import
   private actionImport() {
+    if (this.importJson(this.dialogEntry.value)) {
+      // close dialog
+      this.actionClose();
+    }
+  }
+
+  // import JSON data, returns false (after telling the user) if the data is not valid
+  private importJson(text: string): boolean {
     try {
-      const json = JSON.parse(this.dialogEntry.value) as ImportFormat|ImportFormatOld;
+      const json = JSON.parse(text) as ImportFormat|ImportFormatOld;
       // check if we have old or new format
       var data: ImportWorkOrder[] = [];
       var days: ImportWorkingHours = {};
@@ -1070,15 +1078,14 @@ export class Timesheetimport extends AbstractModule {
       // General sanity check
       importer.addTask(new SanityCheckTask(daily));
 
-      // close dialog
-      this.actionClose();
-
       // handle first import item
       importer.clearFailed();
       importer.runTasks();
+      return true;
     } catch (e) {
       console.error(e);
       alert("Import data must be valid JSON");
+      return false;
     }
   }
 
