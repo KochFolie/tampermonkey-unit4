@@ -1,6 +1,23 @@
 import { Utils } from "../../global/utils";
 import { ImportWorkingHours, ImportWorkOrder, SanityDaily } from "../timesheetimport";
 
+/**
+ * Set the value of a Unit4 input without triggering its request (page reload).
+ * Unit4 takes over every field whose hidden IsDirty flag is set with the next request of the page
+ * (e.g. Add, Close editing mode or activating another row), so several fields can be filled at once.
+ */
+export function setValueWithoutRequest(input: HTMLInputElement, value: string) {
+  input.value = value;
+  const dirty = input.closest('td[data-type]')?.querySelector('input[id$="_IsDirty"]') as HTMLInputElement | null;
+  const setDirty = (window as any).setDirty;
+  if (dirty && typeof setDirty === 'function') {
+    setDirty(dirty.id);
+  } else {
+    // fallback: Unit4's onchange handlers call setDirty as well
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
 export type FoundField = {
   field?: HTMLInputElement;
   value: string;

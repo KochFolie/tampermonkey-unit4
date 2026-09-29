@@ -1,5 +1,5 @@
 import { trans } from "../../global/trans";
-import { ImportTask, ImportTaskResult } from "./importtask";
+import { ImportTask, ImportTaskResult, setValueWithoutRequest } from "./importtask";
 
 export type WorkingHours = {
   date: string;
@@ -19,8 +19,8 @@ export abstract class WHImportTask extends ImportTask {
                 return new WorkingStartImportTask(taskData.groupId, new Date(taskData.date), taskData.value);
             case 'WorkingEndImportTask':
                 return new WorkingEndImportTask(taskData.groupId, new Date(taskData.date), taskData.value);
-            case 'FtZWorkingImportTask':
-                return new FtZWorkingImportTask(taskData.groupId, taskData.weekday, taskData.type, taskData.value);
+            case 'FtZWorkingRowImportTask':
+                return new FtZWorkingRowImportTask(taskData.groupId, taskData.type, taskData.times);
         }
     }
 
@@ -106,38 +106,54 @@ export class WorkingEndImportTask extends WHImportTask {
     }
 }
 
-// working-hours variant that matches the day column by its weekday token instead of a date
-export class FtZWorkingImportTask extends WHImportTask {
-    // English weekday token as used in the grid headers: mon/tue/wed/thu/fri/sat/sun
-    private weekday: string;
-    constructor(groupId: string, weekday: string, type: "start" | "end", time: string) {
-        super(groupId, new Date(0), type, time);
-        this.weekday = weekday;
+// FtZ variant: fills the whole From (or To) row at once, matching the day columns by their weekday
+// token instead of a date. Only activating the row reloads the page; the values are sent with the
+// next request (activating the other row or closing the editing mode).
+export class FtZWorkingRowImportTask extends WHImportTask {
+    // English weekday token as used in the grid headers (mon, tue, ...) -> time (HH:MM)
+    public times: { [weekday: string]: string };
+    constructor(groupId: string, type: "start" | "end", times: { [weekday: string]: string }) {
+        super(groupId, new Date(0), type, '');
+        this.times = times;
     }
 
     actionDescription(): string {
-        return "Enter working time (" + (this.type === "start" ? "From" : "To") + ") for " + this.weekday;
+        return "Enter working time (" + (this.type === "start" ? "From" : "To") + ") for " + Object.keys(this.times).join(', ');
     }
 
-    protected async lookupCell(): Promise<FoundCell> {
+    public async run(): Promise<ImportTaskResult> {
       const headers = await this.waitForElements('.tmWorkinghours th');
       const rows = await this.waitForElements('.workinghours-section .ListItem, .workinghours-section .AltListItem, .workinghours-section .EditRow');
+      // first row: From, second row: To
+      const row = rows[this.type === "start" ? 0 : 1];
 
-      for(var i=0 ; i<headers.length ; ++i) {
-        const head = headers[i] as HTMLElement;
-        const text = (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase();
-        if (text.startsWith(this.weekday)) {
-          for(var j=0 ; j<rows.length ; ++j) {
-            const cell = rows[j].querySelector('td:nth-of-type(' + (i+1) + ')') as HTMLElement;
-            const input = cell?.querySelector('.InputCell input') as HTMLInputElement;
-            if (j === 0 && this.type === "start") {
-                return { cell, input };
-            } else if (j === 1 && this.type === "end") {
-                return { cell, input };
-            }
-          }
+      const cells: { [weekday: string]: HTMLElement } = {};
+      for (var i=0 ; i<headers.length ; ++i) {
+        const text = (headers[i].textContent ?? '').replace(/[_.\s]/g, '').toLowerCase();
+        const weekday = Object.keys(this.times).find(w => text.startsWith(w));
+        const cell = row?.querySelector('td:nth-of-type(' + (i+1) + ')') as HTMLElement | null;
+        if (weekday && cell) {
+          cells[weekday] = cell;
         }
       }
-      return {};
+      const missing = Object.keys(this.times).filter(w => !cells[w]);
+      if (missing.length === Object.keys(this.times).length) {
+        return this.failure(trans('error_date_cell_not_found', missing.join(', ')));
+      }
+
+      const first = Object.values(cells)[0];
+      if (!first.querySelector('.InputCell input')) {
+        // row is not editable yet: click to activate and try again
+        first.click();
+        return this.retryAfterReload();
+      }
+
+      Object.entries(cells).forEach(([weekday, cell]) => {
+        const input = cell.querySelector('.InputCell input') as HTMLInputElement | null;
+        if (input) {
+          setValueWithoutRequest(input, this.formatLocalTime(this.times[weekday], input));
+        }
+      });
+      return missing.length > 0 ? this.failure(trans('error_date_cell_not_found', missing.join(', '))) : this.next();
     }
 }

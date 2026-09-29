@@ -3,7 +3,7 @@ import { AbstractModule } from '../AbstractModule';
 import { Utils } from "../global/utils";
 import { Importer } from './importer/importer';
 import { CloseEditingModeTask, SanityCheckTask } from "./importer/importtask";
-import { FtZWorkingImportTask, WorkingEndImportTask, WorkingStartImportTask } from "./importer/workinghours";
+import { FtZWorkingRowImportTask, WorkingEndImportTask, WorkingStartImportTask } from "./importer/workinghours";
 import { ActivityImportTask, DescriptionImportTask, FtZHoursImportTask, FtZStartWorkOrderImportTask, HoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
 import './timesheetimport.less';
 
@@ -514,12 +514,18 @@ export class Timesheetimport extends AbstractModule {
 
     importer.addTask(new CloseEditingModeTask());
 
-    // import the working hours (From/To) per weekday from the Excel start/end times
-    workingDay.forEach((day, token) => {
-      const groupId = ['ftz-workinghours', token].join('|');
-      importer.addTask(new FtZWorkingImportTask(groupId, token, "start", day.start));
-      importer.addTask(new FtZWorkingImportTask(groupId, token, "end", day.end));
-    });
+    // import the working hours (From/To) from the Excel start/end times: the whole From row first,
+    // then the whole To row, so that only switching between the rows reloads the page
+    if (workingDay.size > 0) {
+      const starts: { [weekday: string]: string } = {};
+      const ends: { [weekday: string]: string } = {};
+      workingDay.forEach((day, token) => {
+        starts[token] = day.start;
+        ends[token] = day.end;
+      });
+      importer.addTask(new FtZWorkingRowImportTask('ftz-workinghours|start', "start", starts));
+      importer.addTask(new FtZWorkingRowImportTask('ftz-workinghours|end', "end", ends));
+    }
 
     importer.addTask(new CloseEditingModeTask());
 
