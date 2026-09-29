@@ -18,6 +18,8 @@ export abstract class WOImportTask extends ImportTask {
         switch (taskData.task) {
             case 'StartWorkOrderImportTask':
                 return new StartWorkOrderImportTask(taskData.groupId, taskData.workOrder);
+            case 'FtZStartWorkOrderImportTask':
+                return new FtZStartWorkOrderImportTask(taskData.groupId, taskData.workOrder);
             case 'TimecodeImportTask':
                 return new TimecodeImportTask(taskData.groupId, taskData.workOrder);
             case 'WorkOrderImportTask':
@@ -109,6 +111,38 @@ export class StartWorkOrderImportTask extends WOImportTask {
         }
         // we found an editable row, use it directly
         return this.next();
+    }
+}
+
+// FtZ variant: reuse an empty time entry row before adding a new one. The FtZ dialog adds such a
+// row to get a context for Unit4's workorder lookup; Unit4 keeps it with an "Illegal value" warning.
+export class FtZStartWorkOrderImportTask extends StartWorkOrderImportTask {
+    public async run(): Promise<ImportTaskResult> {
+        const rows = await this.waitForElements('.timeentry-section tr.ListItem, .timeentry-section tr.AltListItem, .timeentry-section tr.EditRow');
+        for (const row of rows) {
+            const cell = row.querySelector('td[data-type="cell-workorder"]');
+            if (!cell) {
+                continue; // no time entry row (e.g. summary rows)
+            }
+            // only a completely empty row: no workorder, no description and no hours
+            // (rows with a time code only, e.g. absences, have no workorder either)
+            const text = (td: Element | null) => ((td?.querySelector('.InputCell input') as HTMLInputElement | null)?.value ?? td?.textContent ?? '').trim();
+            const hasHours = [...row.querySelectorAll('td[data-type="cell-weekday"]')].some(td => (Utils.toNumber(text(td)) || 0) !== 0);
+            if (text(cell) !== '' || text(row.querySelector('td[data-type="cell-description"]')) !== '' || hasHours) {
+                continue;
+            }
+            if (row.classList.contains('EditRow')) {
+                // empty row is already editable, fill it directly
+                return this.next();
+            }
+            const description = row.querySelector('td[data-type=cell-description] div.ww.ellipsis') as HTMLElement | null;
+            if (description) {
+                // make the empty row editable => page reload
+                description.click();
+                return this.nextAfterReload();
+            }
+        }
+        return super.run();
     }
 }
 

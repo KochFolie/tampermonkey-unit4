@@ -4,7 +4,7 @@ import { Utils } from "../global/utils";
 import { Importer } from './importer/importer';
 import { CloseEditingModeTask, SanityCheckTask } from "./importer/importtask";
 import { FtZWorkingImportTask, WorkingEndImportTask, WorkingStartImportTask } from "./importer/workinghours";
-import { ActivityImportTask, DescriptionImportTask, FtZHoursImportTask, HoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
+import { ActivityImportTask, DescriptionImportTask, FtZHoursImportTask, FtZStartWorkOrderImportTask, HoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
 import './timesheetimport.less';
 
 export type ImportWorkingHoursDay = {
@@ -567,7 +567,7 @@ export class Timesheetimport extends AbstractModule {
 
     groups.forEach((group, key) => {
       const groupId = ['ftz', key].join('|');
-      importer.addTask(new StartWorkOrderImportTask(groupId, group.wo));
+      importer.addTask(new FtZStartWorkOrderImportTask(groupId, group.wo));
       importer.addTask(new WorkOrderImportTask(groupId, group.wo));
       importer.addTask(new DescriptionImportTask(groupId, group.wo));
       group.hours.forEach((hours, token) => {
