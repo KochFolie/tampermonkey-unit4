@@ -63,8 +63,40 @@ with it.
 * **Breaks**: the gaps between the bookings of a day, entered into the break row
   (activity 999) that Unit4 inserts automatically. Rows marked as "Pause" in the Excel are
   ignored, as the gap already covers them.
+* **Vacation, overtime compensation, sick leave & co.** are booked with their duration only,
+  see below.
 * After the import, a sanity check verifies the break rules, the maximum working time per
   day and the weekly totals against the "Normal hours" of your timesheet.
+
+# Vacation, overtime compensation & co.
+
+The Excel calculates the duration from start and end, so bookings like vacation or overtime
+compensation need times as well - but these times are no presence. Bookings on the following
+work orders are therefore booked with their duration, but their times are neither used for the
+working hours (From/To) nor for the breaks, and the sanity check does not count them as work:
+
+| Work order     | What                                                                       |
+|----------------|----------------------------------------------------------------------------|
+| `950000-10000` | DE3 internal: vacation (900), bank holiday (906), child sick (905), overtime compensation (908), ... |
+| `950100-10025` | DE3 sick leave                                                             |
+| `940000-10000` | DE2 internal                                                               |
+
+Example: if you worked from 9:00 to 17:00 and book overtime compensation from 17:00 to 17:30,
+the working hours are 9:00 - 17:00. A day with vacation only gets no working hours at all.
+
+If your country or company uses other work orders, adjust the list with the configuration
+option "Work orders not counting as presence", one rule per line:
+
+```
+950200-10011           another work order (text behind the rule is ignored)
+950300-*               "*" as wildcard
+-950000-10000 (906)    a leading "-" adds an exception: bank holidays count as presence
+-940000-10000          ... or removes a default rule completely
+```
+
+Your rules are combined with the defaults above, so new defaults that come with an update apply
+automatically. If a default is missing or wrong for everybody, please tell us so it can be
+fixed for all.
 
 # Descriptions
 
