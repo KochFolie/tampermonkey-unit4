@@ -487,6 +487,10 @@ export class Timesheetimport extends AbstractModule {
     type Interval = { start: number; end: number };
     const dayIntervals = new Map<string, Interval[]>();
 
+    // intervals of non-presence bookings per weekday: they do not define the working hours, but
+    // a non-presence block within the working hours (e.g. a doctor's appointment) is no break
+    const nonPresenceIntervals = new Map<string, Interval[]>();
+
     // all weekdays with bookings (incl. days with non-presence bookings only, e.g. vacation)
     const importDays = new Set<string>();
     // hours of bookings that do not count as presence (vacation, overtime compensation, ...)
@@ -510,6 +514,11 @@ export class Timesheetimport extends AbstractModule {
       // collect the booking interval (defines presence -> gaps between them are breaks) and
       // the working-hours window (min start / max end). Bookings without a workorder count
       // as well, so that window and breaks are derived from the same bookings.
+      if (nonPresence && entry.start !== '' && entry.end !== '') {
+        const list = nonPresenceIntervals.get(token) ?? [];
+        list.push({ start: Utils.hoursFromTimestring(entry.start), end: Utils.hoursFromTimestring(entry.end) });
+        nonPresenceIntervals.set(token, list);
+      }
       if (!nonPresence && entry.start !== '' && entry.end !== '') {
         const list = dayIntervals.get(token) ?? [];
         list.push({ start: Utils.hoursFromTimestring(entry.start), end: Utils.hoursFromTimestring(entry.end) });
@@ -545,8 +554,18 @@ export class Timesheetimport extends AbstractModule {
       }
     });
 
-    // derive the break per weekday as the sum of the gaps between consecutive bookings
-    dayIntervals.forEach((intervals, token) => {
+    // derive the break per weekday as the sum of the gaps between consecutive bookings. Non-presence
+    // bookings within the working hours (clipped to them) fill gaps as well, they are no break.
+    // non-presence hours within the working hours per weekday, no working time for the sanity check
+    const nonPresenceInWindow = new Map<string, number>();
+    dayIntervals.forEach((presence, token) => {
+      const windowStart = Math.min(...presence.map(p => p.start));
+      const windowEnd = Math.max(...presence.map(p => p.end));
+      const inWindow = (nonPresenceIntervals.get(token) ?? [])
+        .map(p => ({ start: Math.max(p.start, windowStart), end: Math.min(p.end, windowEnd) }))
+        .filter(p => p.end > p.start);
+      nonPresenceInWindow.set(token, inWindow.reduce((sum, p) => sum + p.end - p.start, 0));
+      const intervals = [...presence, ...inWindow];
       intervals.sort((a, b) => a.start - b.start);
       let gap = 0;
       let prevEnd = intervals[0].end;
@@ -626,7 +645,7 @@ export class Timesheetimport extends AbstractModule {
       daily[label] = {
         hours: hoursByDay.get(token) ?? 0,
         breaks: breaksByDay.get(token) ?? 0,
-        workingTime: Utils.difference(day.start, day.end)
+        workingTime: Utils.difference(day.start, day.end) - (nonPresenceInWindow.get(token) ?? 0)
       };
     });
     importer.addTask(new SanityCheckTask(daily, nonWorkingHours));
