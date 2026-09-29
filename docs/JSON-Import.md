@@ -13,6 +13,10 @@ Clicking on that button will open a dialog where you need to paste in your JSON 
 Afterwards, the script will enter the data for you - since Unit4 is doing several
 pare reloads as part of this process, the import will take a while.
 
+If the data contains incomplete or invalid work orders (e.g. `950100-X`), a review view
+is shown first, where you can correct them with suggestions from Unit4 (see
+[FtZ-Import.md](FtZ-Import.md#3-review-only-if-needed) for details).
+
 After the import has finished, you can add, edit or delete data - but keep in mind
 that the importer does not save anything, so you need to hit "Save" when you are
 fine with the results on your own!

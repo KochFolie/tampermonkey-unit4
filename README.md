@@ -22,7 +22,8 @@ The script enhances the time entry screen with these features:
 * hide some unused columns
 * always show workorder and project titles
 * experimental: add more than 1 row at once
-* experimental: import data using JSON
+* experimental: import data using JSON ([docs](docs/JSON-Import.md))
+* experimental: import data from the "Florians tollige Zeiterfassung" Excel ([docs](docs/FtZ-Import.md))
 
 When the script is active, a "config" button is rendered in the bottom right corner.
 Using this, you can enable or disable some features of this script.
