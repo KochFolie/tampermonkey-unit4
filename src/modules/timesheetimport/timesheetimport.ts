@@ -70,8 +70,7 @@ export class Timesheetimport extends AbstractModule {
   private static readonly ftzPendingDialogStorageKey = 'ftzPendingDialog';
 
   private standardAddBtn!: HTMLButtonElement;
-  private dialog!: HTMLElement;
-  private dialogEntry!: HTMLTextAreaElement;
+  // shared import dialog for JSON and FtZ data (the review view is FtZ only)
   private ftzDialog!: HTMLElement;
   private ftzDialogEntry!: HTMLTextAreaElement;
   private ftzCorrectionContainer!: HTMLElement;
@@ -129,15 +128,8 @@ export class Timesheetimport extends AbstractModule {
         });
 
         if (this.standardAddBtn) {
-          if (Configuration.getInstance().experimentalJsonImport()) {
-            this.addJsonImportUI(table);
-          }
-
-          if (Configuration.getInstance().experimentalFtZExcelImport()) {
-            this.addFtZExcelImportUI(table);
-          }
-
-          // shared by both importers
+          // one import button for JSON and FtZ data, the format is detected on import
+          this.addImportUI(table);
           this.addFailedButtonUI(table);
         }
 
@@ -151,53 +143,6 @@ export class Timesheetimport extends AbstractModule {
         this.runTasks();
       }
     }
-  }
-
-  private addJsonImportUI(table: HTMLTableElement) {
-    // create modal import dialog
-    this.dialog = document.createElement("div");
-    this.dialog.classList.add("modalDialog");
-    this.dialog.style.display = 'none';
-
-    this.dialogEntry = document.createElement("textarea");
-    this.dialog.appendChild(this.dialogEntry);
-
-    const dialogButtons = document.createElement("div");
-    dialogButtons.classList.add("modalDialog__buttons");
-    this.dialog.appendChild(dialogButtons);
-
-    const dialogOK = document.createElement("button");
-    dialogOK.setAttribute("type", "button");
-    dialogOK.classList.add("RibbonInlineButton", "RibbonInlineButtonHappy");
-    dialogOK.innerHTML = "<span>Start Import</span>";
-    dialogOK.addEventListener('click', this.actionImport.bind(this));
-    dialogButtons.appendChild(dialogOK);
-
-    const dialogCancel = document.createElement("button");
-    dialogCancel.setAttribute("type", "button");
-    dialogCancel.classList.add("RibbonInlineButton");
-    dialogCancel.innerHTML = "<span>Cancel</span>";
-    dialogCancel.addEventListener('click', this.actionClose.bind(this));
-    dialogButtons.appendChild(dialogCancel);
-
-    document.body.appendChild(this.dialog);
-
-    // create new button for import
-    const buttonImportCell = document.createElement("td");
-    table.rows[0].insertBefore(buttonImportCell, this.standardAddBtn.parentElement);
-    buttonImportCell.classList.add('Button');
-    buttonImportCell.style.paddingRight = "0";
-    const buttonImport = document.createElement("button");
-    buttonImport.setAttribute("id", "json-import-btn");
-    buttonImport.setAttribute("type", "button");
-    buttonImport.setAttribute("role", "button");
-    buttonImport.setAttribute("title", "Import data from JSON");
-    buttonImport.setAttribute("onclick", "");
-    buttonImport.classList.add('BaseButton');
-    buttonImport.classList.add('SectionButton');
-    buttonImport.innerHTML = "<span>Import JSON</span>"
-    buttonImport.addEventListener("click", this.actionDialog.bind(this));
-    buttonImportCell.appendChild(buttonImport);
   }
 
   private addFailedButtonUI(table: HTMLTableElement) {
@@ -222,15 +167,15 @@ export class Timesheetimport extends AbstractModule {
     buttonFailedCell.appendChild(this.buttonFailed);
   }
 
-  private addFtZExcelImportUI(table: HTMLTableElement) {
-    // create modal import dialog for "Florians tollige Zeiterfassung" Excel data
+  private addImportUI(table: HTMLTableElement) {
+    // create modal import dialog for JSON and "Florians tollige Zeiterfassung" Excel data
     this.ftzDialog = document.createElement("div");
     this.ftzDialog.classList.add("modalDialog");
     this.ftzDialog.style.display = 'none';
 
-    // paste area for the tab-separated Excel export
+    // paste area for JSON or the tab-separated Excel export
     this.ftzDialogEntry = document.createElement("textarea");
-    this.ftzDialogEntry.setAttribute("placeholder", "Excel-Daten hier einfügen (Select-All → Copy aus Florians tollige Zeiterfassung)");
+    this.ftzDialogEntry.setAttribute("placeholder", "JSON oder Excel-Daten hier einfügen (Excel: Select-All → Copy aus Florians tollige Zeiterfassung)");
     this.ftzDialog.appendChild(this.ftzDialogEntry);
 
     // correction area for invalid workorders (hidden until validation fails)
@@ -259,21 +204,22 @@ export class Timesheetimport extends AbstractModule {
 
     document.body.appendChild(this.ftzDialog);
 
-    // create new button for "Florians tollige Zeiterfassung" Excel import
-    const buttonFtZExcelCell = document.createElement("td");
-    table.rows[0].insertBefore(buttonFtZExcelCell, this.standardAddBtn.parentElement);
-    buttonFtZExcelCell.classList.add('Button');
-    const buttonFtZExcel = document.createElement("button");
-    buttonFtZExcel.setAttribute("id", "ftz-import-btn");
-    buttonFtZExcel.setAttribute("type", "button");
-    buttonFtZExcel.setAttribute("role", "button");
-    buttonFtZExcel.setAttribute("title", "Import data from Florians tollige Zeiterfassung Excel");
-    buttonFtZExcel.setAttribute("onclick", "");
-    buttonFtZExcel.classList.add('BaseButton');
-    buttonFtZExcel.classList.add('SectionButton');
-    buttonFtZExcel.innerHTML = "<span>Import FtZ</span>"
-    buttonFtZExcel.addEventListener("click", this.actionFtZExcelDialog.bind(this));
-    buttonFtZExcelCell.appendChild(buttonFtZExcel);
+    // create new button for the import
+    const buttonImportCell = document.createElement("td");
+    table.rows[0].insertBefore(buttonImportCell, this.standardAddBtn.parentElement);
+    buttonImportCell.classList.add('Button');
+    buttonImportCell.style.paddingRight = "0";
+    const buttonImport = document.createElement("button");
+    buttonImport.setAttribute("id", "import-btn");
+    buttonImport.setAttribute("type", "button");
+    buttonImport.setAttribute("role", "button");
+    buttonImport.setAttribute("title", "Import data from JSON or Florians tollige Zeiterfassung Excel");
+    buttonImport.setAttribute("onclick", "");
+    buttonImport.classList.add('BaseButton');
+    buttonImport.classList.add('SectionButton');
+    buttonImport.innerHTML = "<span>Import</span>"
+    buttonImport.addEventListener("click", this.actionFtZExcelDialog.bind(this));
+    buttonImportCell.appendChild(buttonImport);
   }
 
   private failedUpdate() {
@@ -283,14 +229,7 @@ export class Timesheetimport extends AbstractModule {
     this.buttonFailed.disabled = sessionStorage.getItem("import_failed_summary") === null;
   }
 
-  // show modal dialog
-  private actionDialog() {
-    this.dialogEntry.value = '';
-    this.dialog.style.display = 'flex';
-    this.dialogEntry.focus();
-  }
-
-  // show FtZ Excel modal dialog
+  // show the import modal dialog
   private actionFtZExcelDialog() {
     this.ftzDialogEntry.value = '';
     this.ftzLookupRowRequested = false;
@@ -299,7 +238,7 @@ export class Timesheetimport extends AbstractModule {
     this.ftzDialogEntry.focus();
   }
 
-  // close FtZ Excel modal dialog
+  // close the import modal dialog
   private actionFtZExcelClose() {
     this.ftzDialog.style.display = 'none';
     this.ftzDialogEntry.value = '';
@@ -318,12 +257,6 @@ export class Timesheetimport extends AbstractModule {
     this.ftzOkButton.disabled = false;
   }
 
-  // close modal dialog
-  private actionClose() {
-    this.dialog.style.display = 'none';
-    this.dialogEntry.value = '';
-  }
-
   private runTasks() {
     const importer = Importer.getInstance();
     importer.runTasks().then(() => {
@@ -331,17 +264,33 @@ export class Timesheetimport extends AbstractModule {
     })
   }
 
-  // start the "Florians tollige Zeiterfassung" Excel import
+  // start the import: JSON data goes to the JSON import, Excel data to the FtZ import
   private actionFtZExcelImport() {
     const inCorrectionView = this.ftzCorrectionContainer.style.display !== 'none';
 
     if (!inCorrectionView) {
-      // phase 1: parse the pasted tab-separated data
-      this.ftzEntries = Timesheetimport.parseFtZTsv(this.ftzDialogEntry.value);
-      if (this.ftzEntries.length === 0) {
-        alert("Keine gültigen Zeitbuchungen erkannt. Bitte die kompletten Excel-Daten (inkl. Tabellenkopf) einfügen.");
+      // phase 1: detect the pasted format and branch to the matching importer
+      const text = this.ftzDialogEntry.value;
+      const format = Timesheetimport.detectImportFormat(text);
+      if (format === 'json') {
+        if (!Configuration.getInstance().experimentalJsonImport()) {
+          alert("Der JSON-Import ist in der Konfiguration deaktiviert.");
+        } else if (this.importJson(text)) {
+          this.actionFtZExcelClose();
+        }
         return;
       }
+      if (format === null) {
+        alert("Unbekanntes Format. Bitte JSON-Daten oder die kompletten Excel-Daten aus Florians tollige Zeiterfassung (inkl. Tabellenkopf) einfügen.");
+        return;
+      }
+      if (!Configuration.getInstance().experimentalFtZExcelImport()) {
+        alert("Der Excel-Import (Florians tollige Zeiterfassung) ist in der Konfiguration deaktiviert.");
+        return;
+      }
+
+      // parse the pasted tab-separated data
+      this.ftzEntries = Timesheetimport.parseFtZTsv(text);
 
       // set aside bookings on weekdays that are not part of the current timesheet
       // (e.g. a week split by a month end), they cannot be imported
@@ -442,6 +391,15 @@ export class Timesheetimport extends AbstractModule {
     this.ftzDialogEntry.value = text;
     this.ftzLookupRowRequested = true;
     this.actionFtZExcelImport();
+  }
+
+  // JSON starts with [ or {, the Excel export is recognized by its bookings (never valid JSON)
+  private static detectImportFormat(text: string): 'json' | 'ftz' | null {
+    const trimmed = text.trim();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      return 'json';
+    }
+    return Timesheetimport.parseFtZTsv(text).length > 0 ? 'ftz' : null;
   }
 
   // load the saved column-F -> corrected workorder map from localStorage
@@ -956,14 +914,6 @@ export class Timesheetimport extends AbstractModule {
     const time = `${entry.start}–${entry.end}`;
     const context = [entry.weekday, time].filter(v => v !== '').join(' ');
     return entry.comment !== '' ? `${context} · ${entry.comment}` : context;
-  }
-
-  // start the import
-  private actionImport() {
-    if (this.importJson(this.dialogEntry.value)) {
-      // close dialog
-      this.actionClose();
-    }
   }
 
   // import JSON data, returns false (after telling the user) if the data is not valid

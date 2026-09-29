@@ -5,8 +5,8 @@ in the configuration.
 
 # How to use
 
-When you activated the feature in configuration, you will see a new button "Import JSON" below
-the time entry table.
+When you activated the feature in configuration, you will see a new button "Import" below
+the time entry table (it also accepts Excel data, the format is detected automatically).
 
 Clicking on that button will open a dialog where you need to paste in your JSON data.
 
