@@ -92,4 +92,7 @@ hours that moved to another day are cleared.
 
 If you changed the **work order or description** of a booking, the import cannot know that
 it is the same booking: it adds a new row and the old one keeps its hours. The summary
-then reports that the sum of hours does not match - delete the outdated row in that case.
+then reports that the sum of hours does not match and lists the rows with hours on the
+imported days that are not part of the import - delete the outdated ones. The same list
+shows up if you imported only a part of the Excel data or booked something manually in
+Unit4; in that case the rows are fine and you can ignore the message.
