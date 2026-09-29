@@ -28,8 +28,6 @@ export abstract class WOImportTask extends ImportTask {
                 return new ActivityImportTask(taskData.groupId, taskData.workOrder);
             case 'DescriptionImportTask':
                 return new DescriptionImportTask(taskData.groupId, taskData.workOrder);
-            case 'HoursImportTask':
-                return new HoursImportTask(taskData.groupId, taskData.workOrder, new Date(taskData.date), taskData.value);
             case 'RowHoursImportTask':
                 return new RowHoursImportTask(taskData.groupId, taskData.workOrder, taskData.hours);
             case 'StartBreakRowImportTask':
@@ -305,39 +303,6 @@ export class DescriptionImportTask extends WOFieldImportTask {
         return "Enter description for " + this.workOrder.workOrder;
     }
 }
-export class HoursImportTask extends WOFieldImportTask {
-    private date: Date;
-    constructor(groupId: string, workOrder: WorkOrder, day: Date, hours: number) {
-        super(groupId, workOrder, 'cell-weekday', Utils.toLocaleString(hours), true);
-        this.date = day;
-    }
-
-    actionDescription(): string {
-        return "Enter hours for " + this.workOrder.workOrder + " on " + this.date.toLocaleDateString();
-    }
-
-    protected async lookupField(row: HTMLElement): Promise<FoundField|null> {
-      // scope to the time entry grid, the working hours grid uses the same cell-weekday markup
-      const headers = await this.waitForElements('.timeentry-section th[data-type=cell-weekday]');
-      const cells = await this.waitForElements('.timeentry-section .EditRow [data-type=cell-weekday]');
-
-      // requested date
-      const dateEN = (this.date.getMonth()+1) + "/" + this.date.getDate(); // eEN format: M/D
-      const month = String(this.date.getMonth()+1).padStart(2, '0');
-      const dateDE = this.date.getDate() + "." + month; // DE format: DD.MM.
-
-      for(var i=0 ; i<headers.length ; ++i) {
-        const head = headers[i] as HTMLElement;
-        if (head.title.includes(dateEN) || head.title.includes(dateDE)) {
-          // seems to match the date
-          return await this.fieldElement(cells[i] as HTMLElement, 'cell-weekday['+i+']');
-        }
-      }
-      return null;
-    }
-
-}
-
 // enters the hours of all days into the active row at once. The values are only marked dirty and
 // sent with the next request (Add for the next row or Close editing mode), instead of one page
 // reload per day.
