@@ -40,6 +40,7 @@ export type FtZEntry = {
   end: string;            // D - Ende (HH:MM)
   duration: string;       // E - Dauer (HH:MM)
   workOrder: string;      // F - Echte Workorder (authoritative, must match the 000000-00000 format)
+  activity: string;       // F - optional activity in parentheses, e.g. "950000-10000 (908)"; '' = Unit4 default
   workOrderInput: string; // G - Workorder (raw autocomplete text or workorder)
   ticket: string;         // H - Ticket
   comment: string;        // I - Kommentar
@@ -512,11 +513,11 @@ export class Timesheetimport extends AbstractModule {
       if (entry.workOrder === '') return; // missing workorder -> already warned, cannot import
 
       const description = Configuration.getInstance().formatFtZDescription(entry);
-      const key = entry.workOrder + '\u0000' + description;
+      const key = [entry.workOrder, entry.activity, description].join('\u0000');
       let group = groups.get(key);
       if (!group) {
         group = {
-          wo: { workOrder: entry.workOrder, activity: '', timeCode: '', description },
+          wo: { workOrder: entry.workOrder, activity: entry.activity, timeCode: '', description },
           hours: new Map<string, number>()
         };
         groups.set(key, group);
@@ -574,6 +575,10 @@ export class Timesheetimport extends AbstractModule {
       const groupId = ['ftz', key].join('|');
       importer.addTask(new EmptyRowStartWorkOrderImportTask(groupId, group.wo));
       importer.addTask(new WorkOrderImportTask(groupId, group.wo));
+      // Unit4 sets its default activity with the work order, so a given one comes afterwards
+      if (group.wo.activity !== '') {
+        importer.addTask(new ActivityImportTask(groupId, group.wo));
+      }
       importer.addTask(new DescriptionImportTask(groupId, group.wo));
       importer.addTask(new RowHoursImportTask(groupId, group.wo, withAllDays(group.hours)));
     });
@@ -695,12 +700,14 @@ export class Timesheetimport extends AbstractModule {
 
       // read the work columns by their fixed offset behind the Anfang/Ende/Dauer triplet:
       // +3 Echte Workorder, +4 Workorder, +5 Ticket, +6 Kommentar
+      const { workOrder, activity } = Timesheetimport.splitFtZWorkOrder(cells[i + 3] ?? '');
       entries.push({
         weekday,
         start,
         end,
         duration,
-        workOrder: cells[i + 3] ?? '',
+        workOrder,
+        activity,
         workOrderInput: cells[i + 4] ?? '',
         ticket: cells[i + 5] ?? '',
         comment: cells[i + 6] ?? '',
@@ -711,6 +718,12 @@ export class Timesheetimport extends AbstractModule {
     }
 
     return entries;
+  }
+
+  // "Echte Workorder" may carry the activity in parentheses, e.g. "950000-10000 (908)" for overtime
+  private static splitFtZWorkOrder(value: string): { workOrder: string, activity: string } {
+    const match = value.trim().match(/^(.*?)\s*\(\s*(\d+)\s*\)$/);
+    return match ? { workOrder: match[1], activity: match[2] } : { workOrder: value.trim(), activity: '' };
   }
 
   // true if the row contains a valid Anfang/Ende/Dauer time-triplet anywhere
