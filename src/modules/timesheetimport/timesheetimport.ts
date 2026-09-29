@@ -487,6 +487,11 @@ export class Timesheetimport extends AbstractModule {
     type Interval = { start: number; end: number };
     const dayIntervals = new Map<string, Interval[]>();
 
+    // all weekdays with bookings (incl. days with non-presence bookings only, e.g. vacation)
+    const importDays = new Set<string>();
+    // hours of bookings that do not count as presence (vacation, overtime compensation, ...)
+    let nonWorkingHours = 0;
+
     this.ftzEntries.forEach(entry => {
       const token = Timesheetimport.ftzWeekdayToken[entry.weekday];
       if (!token) return; // unknown weekday
@@ -496,11 +501,16 @@ export class Timesheetimport extends AbstractModule {
 
       const hours = Utils.hoursFromTimestring(entry.duration);
       if (isNaN(hours) || hours <= 0) return;
+      importDays.add(token);
+
+      // vacation, overtime compensation etc.: only the duration counts, the times in the Excel
+      // are no presence (see DEFAULT_NON_PRESENCE_RULES)
+      const nonPresence = entry.workOrder !== '' && Configuration.getInstance().isNonPresence(entry.workOrder, entry.activity);
 
       // collect the booking interval (defines presence -> gaps between them are breaks) and
       // the working-hours window (min start / max end). Bookings without a workorder count
       // as well, so that window and breaks are derived from the same bookings.
-      if (entry.start !== '' && entry.end !== '') {
+      if (!nonPresence && entry.start !== '' && entry.end !== '') {
         const list = dayIntervals.get(token) ?? [];
         list.push({ start: Utils.hoursFromTimestring(entry.start), end: Utils.hoursFromTimestring(entry.end) });
         dayIntervals.set(token, list);
@@ -528,7 +538,11 @@ export class Timesheetimport extends AbstractModule {
       }
       group.hours.set(token, (group.hours.get(token) ?? 0) + hours);
       sumHours += hours;
-      hoursByDay.set(token, (hoursByDay.get(token) ?? 0) + hours);
+      if (nonPresence) {
+        nonWorkingHours += hours;
+      } else {
+        hoursByDay.set(token, (hoursByDay.get(token) ?? 0) + hours);
+      }
     });
 
     // derive the break per weekday as the sum of the gaps between consecutive bookings
@@ -573,7 +587,7 @@ export class Timesheetimport extends AbstractModule {
     // all days of the Excel data: rows get hours for each of them (0 if none), so that hours moved
     // to another day are cleared in existing rows on a repeated import
     const withAllDays = (hours: Map<string, number>) =>
-      Object.fromEntries([...dayIntervals.keys()].map(token => [token, hours.get(token) ?? 0]));
+      Object.fromEntries([...importDays].map(token => [token, hours.get(token) ?? 0]));
 
     groups.forEach((group, key) => {
       const groupId = ['ftz', key].join('|');
@@ -602,7 +616,7 @@ export class Timesheetimport extends AbstractModule {
     }
 
     const importedRows = [...groups.values()].map(g => ({ workOrder: g.wo.workOrder, description: g.wo.description }));
-    importer.addTask(new WorkOrderSummaryTask(sumHours + sumBreaks, sumBreaks, importedRows, [...dayIntervals.keys()]));
+    importer.addTask(new WorkOrderSummaryTask(sumHours + sumBreaks, sumBreaks, importedRows, [...importDays]));
 
     // same sanity check as the JSON import (break rules, max. working time per day, weekly totals),
     // keyed by weekday (e.g. "Mon") since the Excel carries no dates
@@ -615,7 +629,7 @@ export class Timesheetimport extends AbstractModule {
         workingTime: Utils.difference(day.start, day.end)
       };
     });
-    importer.addTask(new SanityCheckTask(daily));
+    importer.addTask(new SanityCheckTask(daily, nonWorkingHours));
 
     importer.clearFailed();
     this.actionFtZExcelClose();
