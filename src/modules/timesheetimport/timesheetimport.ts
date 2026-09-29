@@ -76,6 +76,8 @@ export class Timesheetimport extends AbstractModule {
   private ftzCorrectionContainer!: HTMLElement;
   private ftzOkButton!: HTMLButtonElement;
   private ftzEntries: FtZEntry[] = [];
+  // parsed JSON data while its workorders are reviewed (null for FtZ data)
+  private jsonReview: { data: ImportWorkOrder[], days: ImportWorkingHours } | null = null;
   // bookings on weekdays the current timesheet does not contain (skipped by the import)
   private ftzOutsideEntries: FtZEntry[] = [];
   private ftzCorrectionInputs: Map<string, HTMLInputElement> = new Map();
@@ -248,6 +250,7 @@ export class Timesheetimport extends AbstractModule {
   // reset the FtZ dialog back to the paste view
   private resetFtZView() {
     this.ftzEntries = [];
+    this.jsonReview = null;
     this.ftzOutsideEntries = [];
     this.ftzCorrectionInputs = new Map();
     this.ftzCorrectionContainer.innerHTML = '';
@@ -275,9 +278,24 @@ export class Timesheetimport extends AbstractModule {
       if (format === 'json') {
         if (!Configuration.getInstance().experimentalJsonImport()) {
           alert("Der JSON-Import ist in der Konfiguration deaktiviert.");
-        } else if (this.importJson(text)) {
-          this.actionFtZExcelClose();
+          return;
         }
+        this.jsonReview = Timesheetimport.parseJsonImport(text);
+        if (this.jsonReview === null) {
+          return;
+        }
+
+        // invalid workorders get the same review view (incl. workorder lookup) as the FtZ import
+        const invalid = this.distinctInvalidWorkOrders();
+        if (invalid.length > 0 && !this.ftzLookupRowRequested && this.ftzLookupContext() === null) {
+          this.requestFtZLookupRow();
+          return;
+        }
+        if (invalid.length > 0) {
+          this.renderFtZCorrections(invalid, []);
+          return;
+        }
+        this.startJsonImport();
         return;
       }
       if (format === null) {
@@ -290,6 +308,7 @@ export class Timesheetimport extends AbstractModule {
       }
 
       // parse the pasted tab-separated data
+      this.jsonReview = null;
       this.ftzEntries = Timesheetimport.parseFtZTsv(text);
 
       // set aside bookings on weekdays that are not part of the current timesheet
@@ -324,24 +343,41 @@ export class Timesheetimport extends AbstractModule {
         if (corrected !== original && Timesheetimport.workOrderPattern.test(corrected)) {
           this.saveFtZCorrection(original, corrected);
         }
-        this.ftzEntries.forEach(entry => {
+        this.reviewEntries().forEach(entry => {
           if (entry.workOrder === original) {
             entry.workOrder = corrected;
           }
         });
       });
 
-      // invalid workorders block the import until fixed; missing ones are only a warning
+      // invalid workorders block the import until fixed; missing ones (FtZ only) are just a warning
       const invalid = this.distinctInvalidWorkOrders();
       if (invalid.length > 0) {
-        const missing = this.ftzEntries.filter(e => e.workOrder === '' && !Timesheetimport.isBreakEntry(e));
+        const missing = this.jsonReview ? [] : this.ftzEntries.filter(e => e.workOrder === '' && !Timesheetimport.isBreakEntry(e));
         this.renderFtZCorrections(invalid, missing);
         return;
       }
     }
 
     // all invalid workorders resolved -> start the real import
-    this.startFtZImport();
+    if (this.jsonReview) {
+      this.startJsonImport();
+    } else {
+      this.startFtZImport();
+    }
+  }
+
+  // start the JSON import with the (corrected) entries of the review
+  private startJsonImport() {
+    const json = this.jsonReview;
+    if (json && this.importJsonData(json.data, json.days)) {
+      this.actionFtZExcelClose();
+    }
+  }
+
+  // entries whose workorders are reviewed: the JSON entries or the FtZ bookings
+  private reviewEntries(): { workOrder: string }[] {
+    return this.jsonReview ? this.jsonReview.data : this.ftzEntries;
   }
 
   // open a time entry row for the workorder lookup. Unit4 reloads the page for that, so the pasted
@@ -586,8 +622,9 @@ export class Timesheetimport extends AbstractModule {
   // distinct workorders that are present but do not match the required format
   private distinctInvalidWorkOrders(): string[] {
     return [...new Set(
-      this.ftzEntries
-        .map(e => e.workOrder)
+      this.reviewEntries()
+        // JSON entries with a time code only (e.g. absences) have no workorder
+        .map(e => e.workOrder ?? '')
         .filter(wo => wo !== '' && !Timesheetimport.workOrderPattern.test(wo))
     )];
   }
@@ -781,14 +818,15 @@ export class Timesheetimport extends AbstractModule {
         // list every occurrence of this workorder so the user can identify it
         const occurrences = document.createElement("div");
         occurrences.classList.add("ftzCorrection__occurrences");
-        this.ftzEntries
-          .filter(e => e.workOrder === wo)
-          .forEach(e => {
-            const line = document.createElement("div");
-            line.classList.add("ftzCorrection__occurrence");
-            line.textContent = Timesheetimport.formatOccurrence(e);
-            occurrences.appendChild(line);
-          });
+        const lines = this.jsonReview
+          ? this.jsonReview.data.filter(e => e.workOrder === wo).map(Timesheetimport.formatJsonOccurrence)
+          : this.ftzEntries.filter(e => e.workOrder === wo).map(Timesheetimport.formatOccurrence);
+        lines.forEach(text => {
+          const line = document.createElement("div");
+          line.classList.add("ftzCorrection__occurrence");
+          line.textContent = text;
+          occurrences.appendChild(line);
+        });
         group.appendChild(occurrences);
 
         this.ftzCorrectionInputs.set(wo, input);
@@ -918,10 +956,10 @@ export class Timesheetimport extends AbstractModule {
     return entry.comment !== '' ? `${context} · ${entry.comment}` : context;
   }
 
-  // import JSON data, returns false (after telling the user) if the data is not valid
-  private importJson(text: string): boolean {
-    const json = Timesheetimport.parseJsonImport(text);
-    return json !== null && this.importJsonData(json.data, json.days);
+  // format a JSON entry as "Beschreibung · Datum (Stunden), ..." for the review lists
+  private static formatJsonOccurrence(entry: ImportWorkOrder): string {
+    const days = (entry.time ?? []).map(t => `${t.date} (${t.hours})`).join(', ');
+    return [entry.description, days].filter(v => v).join(' · ');
   }
 
   // parse JSON import data (old and new format), returns null (after telling the user) if it is not valid
