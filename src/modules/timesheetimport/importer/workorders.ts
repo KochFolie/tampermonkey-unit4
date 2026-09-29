@@ -54,6 +54,26 @@ export abstract class WOImportTask extends ImportTask {
      *   - true if new row will be created or exising row will be made editable (=> page reload)
      */
     protected async searchExistingRow() {
+        const found = await this.findExistingRow();
+        if (found !== null) {
+            return found;
+        }
+
+        // no mathing row found, create one by clicking "Add" button
+        // => this will reload the page
+        WOImportTask.addButton.dispatchEvent(new Event('click'));
+        return true;
+    }
+
+    /**
+     * Search an existing row for the given work order (without adding a new one).
+     *
+     * @returns
+     *   - HTMLElement of the editable row if found
+     *   - true if an existing row will be made editable (=> page reload)
+     *   - null if there is no matching row
+     */
+    protected async findExistingRow(): Promise<HTMLElement | true | null> {
         // check all rows
         const rows = await this.waitForElements('tr.ListItem,tr.AltListItem,tr.EditRow');
         for (const row of rows) {
@@ -61,7 +81,7 @@ export abstract class WOImportTask extends ImportTask {
             const activity = row.querySelector('td[data-type="cell-activity"] div.ww.ellipsis')?.textContent;
             const description = row.querySelector('td[data-type="cell-description"] div.ww.ellipsis')?.textContent;
             const timeCode = row.querySelector('td[data-type="cell-timecode"] div.ww.ellipsis')?.textContent;
-            if (this.workOrder.workOrder === workOrder && this.workOrder.activity === activity && this.workOrder.timeCode === timeCode && (this.workOrder.description === description || description === 'Internal - Break Time')) {
+            if (this.matchesRow(workOrder, activity, timeCode, description)) {
                 // found existing row (readonly), make editable by clicking on it
                 // => will reload the page
                 const cell = row.querySelector("td[data-type=cell-description] div.ww.ellipsis") as HTMLElement;
@@ -76,20 +96,26 @@ export abstract class WOImportTask extends ImportTask {
             const activity = (row.querySelector('td[data-type="cell-activity"] td.InputCell input') as HTMLInputElement)?.value;
             const description = (row.querySelector('td[data-type="cell-description"] td.InputCell input') as HTMLInputElement)?.value;
             const timeCode = (row.querySelector('td[data-type="cell-timecode"] td.InputCell input') as HTMLInputElement)?.value;
-            if (this.workOrder.workOrder === workOrder && this.workOrder.activity === activity && this.workOrder.timeCode === timeCode && (this.workOrder.description === description || description === 'Internal - Break Time')) {
+            if (this.matchesRow(workOrder, activity, timeCode, description)) {
                 // found existing row (editable), use it
-                return row;
+                return row as HTMLElement;
             }
         }
-
-        // no mathing row found, create one by clicking "Add" button
-        // => this will reload the page
-        WOImportTask.addButton.dispatchEvent(new Event('click'));
-        return true;
+        return null;
     }
 
     protected async activeRow() {
         return this.waitForElement('tr.EditRow');
+    }
+
+    // does a row belong to this work order? An empty activity or time code in the import data
+    // (e.g. the FtZ import) matches whatever Unit4 prefilled (activity 100, time code 0).
+    private matchesRow(workOrder?: string, activity?: string, timeCode?: string, description?: string): boolean {
+        const matches = (expected: string | undefined, actual: string | undefined) => !expected || expected === actual;
+        return this.workOrder.workOrder === workOrder
+            && matches(this.workOrder.activity, activity)
+            && matches(this.workOrder.timeCode, timeCode)
+            && (this.workOrder.description === description || description === 'Internal - Break Time');
     }
 
 }
@@ -119,6 +145,14 @@ export class StartWorkOrderImportTask extends WOImportTask {
 // Only for normal hours (time code 0), as the empty row is prefilled with that time code.
 export class EmptyRowStartWorkOrderImportTask extends StartWorkOrderImportTask {
     public async run(): Promise<ImportTaskResult> {
+        // an existing row of this work order (repeated import) takes precedence over the empty row
+        const existing = await this.findExistingRow();
+        if (existing === true) {
+            return this.nextAfterReload();
+        } else if (existing !== null) {
+            return this.next();
+        }
+
         const rows = await this.waitForElements('.timeentry-section tr.ListItem, .timeentry-section tr.AltListItem, .timeentry-section tr.EditRow');
         for (const row of rows) {
             const cell = row.querySelector('td[data-type="cell-workorder"]');
