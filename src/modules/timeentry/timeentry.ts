@@ -140,10 +140,9 @@ export class TimeEntry extends AbstractModule {
     // breaks have special time code
     if (timecode === '99') return 'break';
 
-    // non-working time (DE2)
-    if (workorder === '940000-10000') return 'nonworking';
-    // non-working time (DE3)
-    if (workorder === '950000-10000') return 'nonworking';
+    // non-working time (vacation, bank holiday, sick leave, overtime compensation, ...):
+    // shared rules with the Excel import, see DEFAULT_NON_PRESENCE_RULES in the configuration
+    if (Configuration.getInstance().isNonPresence(workorder.trim(), activity.trim())) return 'nonworking';
 
     // everything else is working time
     return 'working';
