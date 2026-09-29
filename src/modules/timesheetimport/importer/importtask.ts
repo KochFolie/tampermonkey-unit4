@@ -9,13 +9,34 @@ import { ImportWorkingHours, ImportWorkOrder, SanityDaily } from "../timesheetim
 export function setValueWithoutRequest(input: HTMLInputElement, value: string) {
   input.value = value;
   const dirty = input.closest('td[data-type]')?.querySelector('input[id$="_IsDirty"]') as HTMLInputElement | null;
-  const setDirty = (window as any).setDirty;
-  if (dirty && typeof setDirty === 'function') {
-    setDirty(dirty.id);
-  } else {
-    // fallback: Unit4's onchange handlers call setDirty as well
-    input.dispatchEvent(new Event('change', { bubbles: true }));
+  if (!dirty) {
+    console.warn('No IsDirty flag found for ' + input.id + ', value will not be sent');
+    return;
   }
+  // do NOT fall back to a change event: for hour cells Unit4's onchange handler sends the request
+  // right away, before the other cells of the row are filled
+  const before = dirty.value;
+  callPageFunction('setDirty', dirty.id);
+  if (dirty.value === before) {
+    console.warn('setDirty did not mark ' + dirty.id + ' as dirty, value may not be sent');
+  }
+}
+
+/**
+ * Call a global function of the Unit4 page. Tampermonkey may run the userscript in a sandbox where
+ * the page's globals are not visible, in that case the call runs in a short-lived script element
+ * inside the page context.
+ */
+function callPageFunction(name: string, ...args: string[]) {
+  const fn = (window as any)[name];
+  if (typeof fn === 'function') {
+    fn(...args);
+    return;
+  }
+  const script = document.createElement('script');
+  script.textContent = name + '(' + args.map(arg => JSON.stringify(arg)).join(', ') + ');';
+  (document.head ?? document.documentElement).appendChild(script);
+  script.remove();
 }
 
 /**
