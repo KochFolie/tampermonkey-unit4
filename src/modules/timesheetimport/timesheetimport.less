@@ -80,4 +80,40 @@
         border: 1px solid #888;
         border-radius: 4px;
     }
+
+    // workorder suggestions from Unit4's lookup service
+    &__suggestions {
+        max-height: 180px;
+        overflow-y: auto;
+        margin: 0 0 8px 0;
+        font-size: 13px;
+        color: #555;
+    }
+
+    &__suggestion {
+        display: flex;
+        gap: 12px;
+        width: 100%;
+        padding: 3px 6px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        text-align: left;
+        font-size: 13px;
+        cursor: pointer;
+
+        &:hover {
+            background: #f3ecc4;
+        }
+
+        &--selected {
+            background: #e6dca8;
+            font-weight: bold;
+        }
+    }
+
+    &__suggestionCode {
+        flex: 0 0 110px;
+        font-family: 'Courier New', Courier, monospace;
+    }
 }

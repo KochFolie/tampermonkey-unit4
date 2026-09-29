@@ -672,6 +672,9 @@ export class Timesheetimport extends AbstractModule {
     // remembered corrections from previous imports (column F -> corrected workorder)
     const savedCorrections = this.loadFtZCorrections();
 
+    // context for Unit4's workorder lookup, only available while a time entry row is in editing mode
+    const lookupContext = invalidWorkOrders.length > 0 ? this.ftzLookupContext() : null;
+
     // warning block for bookings without any workorder (does not block the import)
     if (missingEntries.length > 0) {
       const warning = document.createElement("div");
@@ -740,6 +743,14 @@ export class Timesheetimport extends AbstractModule {
 
         group.appendChild(row);
 
+        // suggestions from Unit4's workorder lookup, e.g. all 950100-* workorders for "950100-X"
+        if (lookupContext) {
+          const suggestions = document.createElement("div");
+          suggestions.classList.add("ftzCorrection__suggestions");
+          group.appendChild(suggestions);
+          this.bindFtZSuggestions(input, suggestions, lookupContext, Timesheetimport.ftzSearchTerm(wo));
+        }
+
         // list every occurrence of this workorder so the user can identify it
         const occurrences = document.createElement("div");
         occurrences.classList.add("ftzCorrection__occurrences");
@@ -766,6 +777,111 @@ export class Timesheetimport extends AbstractModule {
       : "<span>Trotzdem importieren</span>";
     const firstInput = this.ftzCorrectionContainer.querySelector('input') as HTMLInputElement | null;
     if (firstInput) { firstInput.focus(); }
+  }
+
+  // context for Unit4's workorder lookup service. It is bound to a time entry row in editing mode:
+  // the grid context "TTS025^<instance>^TS1611^DE3^<section>" with the section replaced by
+  // the workorder field id and the row number of the edit row.
+  private ftzLookupContext(): string | null {
+    const grid = this.section.querySelector('th[data-type="cell-workorder"]')?.closest('table[data-context]') as HTMLElement | null;
+    const editRow = [...(grid?.querySelectorAll('tr.EditRow') ?? [])].find(row => !Timesheetimport.isBreakRow(row));
+    const rowNr = editRow?.id.match(/_row(\d+)$/)?.[1];
+    const fieldId = (editRow?.querySelector('td[data-type="cell-workorder"] [data-fieldid]') as HTMLElement | null)?.dataset.fieldid;
+    if (!grid?.dataset.context || !rowNr || !fieldId) {
+      return null;
+    }
+    try {
+      const parts = atob(grid.dataset.context).split('^');
+      return parts.length >= 5 ? btoa([...parts.slice(0, 4), fieldId, rowNr].join('^')) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // the break row (activity 999) never offers workorders in the lookup
+  private static isBreakRow(row: Element): boolean {
+    const activity = row.querySelector('td[data-type="cell-activity"]');
+    const value = (activity?.querySelector('input') as HTMLInputElement | null)?.value ?? activity?.textContent ?? '';
+    return value.trim().startsWith('999');
+  }
+
+  // search term for the lookup: the leading digits of a workorder, e.g. "950100" for "950100-X"
+  private static ftzSearchTerm(value: string): string {
+    return (value.trim().match(/^[\d-]*/)?.[0] ?? '').replace(/-+$/, '');
+  }
+
+  // query Unit4's autocomplete service, the same request the workorder field sends while typing
+  private static async lookupFtZWorkOrders(context: string, search: string): Promise<{ value: string, descr: string }[]> {
+    try {
+      const body = new URLSearchParams({ Search: search, Context: context, BatchStart: '1', BatchSize: '50' });
+      const res = await fetch('System/Services/DataListService.aspx', { method: 'POST', body });
+      if (!res.ok) {
+        return [];
+      }
+      const xml = new DOMParser().parseFromString(await res.text(), 'text/xml');
+      return [...xml.querySelectorAll('item')]
+        .map(item => ({
+          value: item.querySelector('value')?.textContent?.trim() ?? '',
+          // descriptions are HTML-encoded twice, e.g. "f&amp;#246;rderung"
+          descr: new DOMParser().parseFromString(item.querySelector('descr')?.textContent ?? '', 'text/html').body.textContent?.trim() ?? ''
+        }))
+        // drops the "[NEW]" entry that echoes the search term
+        .filter(item => Timesheetimport.workOrderPattern.test(item.value));
+    } catch (e) {
+      console.warn('FtZ workorder lookup failed', e);
+      return [];
+    }
+  }
+
+  // fill the suggestion list of one correction input and search again while the user types
+  private bindFtZSuggestions(input: HTMLInputElement, list: HTMLElement, context: string, initialSearch: string) {
+    let timer: number | undefined;
+    let requestId = 0;
+
+    const search = async (term: string) => {
+      const id = ++requestId;
+      if (term === '') {
+        list.textContent = '';
+        return;
+      }
+      list.textContent = 'Suche …';
+      const items = await Timesheetimport.lookupFtZWorkOrders(context, term);
+      if (id !== requestId) {
+        return; // a newer search has been started meanwhile
+      }
+      list.textContent = items.length === 0 ? 'Keine passenden Workorders gefunden' : '';
+      items.forEach(item => {
+        const option = document.createElement("button");
+        option.setAttribute("type", "button");
+        option.classList.add("ftzCorrection__suggestion");
+        if (item.value === input.value.trim()) {
+          option.classList.add("ftzCorrection__suggestion--selected");
+        }
+
+        const code = document.createElement("span");
+        code.classList.add("ftzCorrection__suggestionCode");
+        code.textContent = item.value;
+        option.appendChild(code);
+
+        const descr = document.createElement("span");
+        descr.textContent = item.descr;
+        option.appendChild(descr);
+
+        option.addEventListener('click', () => {
+          input.value = item.value;
+          list.querySelectorAll('.ftzCorrection__suggestion--selected').forEach(e => e.classList.remove("ftzCorrection__suggestion--selected"));
+          option.classList.add("ftzCorrection__suggestion--selected");
+        });
+        list.appendChild(option);
+      });
+    };
+
+    // same delay as Unit4's own autocomplete
+    input.addEventListener('input', () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => search(Timesheetimport.ftzSearchTerm(input.value)), 400);
+    });
+    search(initialSearch);
   }
 
   // format a booking as "Wochentag Anfang–Ende · Kommentar" for the review lists
