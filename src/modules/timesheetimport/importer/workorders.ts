@@ -106,14 +106,15 @@ export abstract class WOImportTask extends ImportTask {
         return this.waitForElement('tr.EditRow');
     }
 
-    // does a row belong to this work order? An empty activity or time code in the import data
-    // (e.g. the FtZ import) matches whatever Unit4 prefilled (activity 100, time code 0).
+    // does a row belong to this work order? An empty activity, time code or description in the
+    // import data (e.g. the FtZ import) matches whatever Unit4 prefilled (activity 100, time code 0,
+    // its default description).
     private matchesRow(workOrder?: string, activity?: string, timeCode?: string, description?: string): boolean {
         const matches = (expected: string | undefined, actual: string | undefined) => !expected || expected === actual;
         return this.workOrder.workOrder === workOrder
             && matches(this.workOrder.activity, activity)
             && matches(this.workOrder.timeCode, timeCode)
-            && (this.workOrder.description === description || description === 'Internal - Break Time');
+            && (matches(this.workOrder.description, description) || description === 'Internal - Break Time');
     }
 
 }
@@ -390,7 +391,7 @@ export class WorkOrderSummaryTask extends ImportTask {
             const workOrder = value('cell-workorder');
             const description = value('cell-description');
             if (workOrder === '' || value('cell-activity').startsWith('999')
-                || this.rows.some(r => r.workOrder === workOrder && r.description === description)) {
+                || this.rows.some(r => r.workOrder === workOrder && (!r.description || r.description === description))) {
                 return; // no work order row (break, absence, summary) or part of this import
             }
             const cells = row.querySelectorAll('td[data-type=cell-weekday]');

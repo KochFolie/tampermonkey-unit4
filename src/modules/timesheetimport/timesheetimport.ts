@@ -583,7 +583,10 @@ export class Timesheetimport extends AbstractModule {
       if (group.wo.activity !== '') {
         importer.addTask(new ActivityImportTask(groupId, group.wo));
       }
-      importer.addTask(new DescriptionImportTask(groupId, group.wo));
+      // without a description (e.g. overtime), Unit4's default text stays
+      if (group.wo.description !== '') {
+        importer.addTask(new DescriptionImportTask(groupId, group.wo));
+      }
       importer.addTask(new RowHoursImportTask(groupId, group.wo, withAllDays(group.hours)));
     });
 
@@ -1085,7 +1088,10 @@ export class Timesheetimport extends AbstractModule {
         importer.addTask(new TimecodeImportTask(groupId, entry));
         importer.addTask(new WorkOrderImportTask(groupId, entry));
         importer.addTask(new ActivityImportTask(groupId, entry));
-        importer.addTask(new DescriptionImportTask(groupId, entry));
+        // without a description, Unit4's default text stays
+        if (entry.description) {
+          importer.addTask(new DescriptionImportTask(groupId, entry));
+        }
         // enter the hours of all days of this entry at once (sent with the next request)
         const hoursByDate: { [date: string]: number } = {};
         entry.time.forEach((timeEntry: any) => {
