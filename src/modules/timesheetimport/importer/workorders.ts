@@ -33,7 +33,7 @@ export abstract class WOImportTask extends ImportTask {
             case 'StartBreakRowImportTask':
                 return new StartBreakRowImportTask(taskData.groupId);
             case 'WorkOrderSummaryTask':
-                return new WorkOrderSummaryTask(taskData.sum, taskData.breaks);
+                return new WorkOrderSummaryTask(taskData.sum, taskData.breaks, taskData.rows, taskData.days);
         }
     }
 
@@ -341,8 +341,16 @@ export class RowHoursImportTask extends WOImportTask {
     }
 }
 
+// a time entry row of the import (work order + description)
+export type ImportedRow = { workOrder: string, description: string };
+
 export class WorkOrderSummaryTask extends ImportTask {
-    constructor(private sum: number, private breaks: number) {
+    /**
+     * @param rows rows of this import and
+     * @param days imported days (weekday tokens or ISO dates, see headerMatchesDay):
+     *   used to list other rows with hours on these days when the sum does not match
+     */
+    constructor(private sum: number, private breaks: number, private rows: ImportedRow[] = [], private days: string[] = []) {
         super('work-order-summary');
     }
 
@@ -361,9 +369,43 @@ export class WorkOrderSummaryTask extends ImportTask {
             const unit4Sum = Utils.toNumber(sumCell.textContent || "0");
             if (Math.abs(unit4Sum - this.sum) > 0.001) {
                 // sum of hours does not match
-                return this.failure(`Sum of hours does not match, expected: ${this.sum}, actual: ${unit4Sum}`);
+                return this.failure(`Sum of hours does not match, expected: ${this.sum}, actual: ${unit4Sum}` + this.foreignRows());
             }
         }
         return this.next();
+    }
+
+    // explain a sum mismatch: rows with hours on imported days that are not part of this import,
+    // e.g. an outdated row after the description changed, a partial import or manual bookings
+    private foreignRows(): string {
+        const section = ImportTask.section;
+        const headers = [...section.querySelectorAll('th[data-type=cell-weekday]')] as HTMLElement[];
+        const dayColumns = headers
+            .map((head, i) => ({ i, label: head.title.replace(/\s*-\s*Header\s*$/, '').trim() }))
+            .filter(({ i }) => this.days.some(day => headerMatchesDay(headers[i], day)));
+
+        const lines: string[] = [];
+        section.querySelectorAll('tr.ListItem, tr.AltListItem').forEach(row => {
+            const value = (type: string) => row.querySelector(`td[data-type="${type}"] div.ww.ellipsis`)?.textContent?.trim() ?? '';
+            const workOrder = value('cell-workorder');
+            const description = value('cell-description');
+            if (workOrder === '' || value('cell-activity').startsWith('999')
+                || this.rows.some(r => r.workOrder === workOrder && r.description === description)) {
+                return; // no work order row (break, absence, summary) or part of this import
+            }
+            const cells = row.querySelectorAll('td[data-type=cell-weekday]');
+            const hours = dayColumns
+                .map(({ i, label }) => ({ label, text: cells[i]?.textContent?.trim() ?? '' }))
+                .filter(({ text }) => (Utils.toNumber(text) || 0) !== 0)
+                .map(({ label, text }) => `${label} ${text}`);
+            if (hours.length > 0) {
+                lines.push(` * ${workOrder} · ${description} (${hours.join(', ')})`);
+            }
+        });
+
+        return lines.length === 0 ? '' :
+            "\n\nRows with hours on imported days that are not part of this import"
+            + " (e.g. changed description or work order, partial import, or booked manually):\n"
+            + lines.join("\n");
     }
 }

@@ -589,7 +589,8 @@ export class Timesheetimport extends AbstractModule {
       importer.addTask(new CloseEditingModeTask());
     }
 
-    importer.addTask(new WorkOrderSummaryTask(sumHours + sumBreaks, sumBreaks));
+    const importedRows = [...groups.values()].map(g => ({ workOrder: g.wo.workOrder, description: g.wo.description }));
+    importer.addTask(new WorkOrderSummaryTask(sumHours + sumBreaks, sumBreaks, importedRows, [...dayIntervals.keys()]));
 
     // same sanity check as the JSON import (break rules, max. working time per day, weekly totals),
     // keyed by weekday (e.g. "Mon") since the Excel carries no dates
@@ -1095,7 +1096,9 @@ export class Timesheetimport extends AbstractModule {
       importer.addTask(new CloseEditingModeTask());
 
       // check sum of hours
-      importer.addTask(new WorkOrderSummaryTask(sumHours, sumBreaks));
+      const importedRows = data.map(entry => ({ workOrder: entry.workOrder, description: entry.description }));
+      const importedDays = [...new Set(data.flatMap(entry => (entry.time ?? []).map(t => t.date)))];
+      importer.addTask(new WorkOrderSummaryTask(sumHours, sumBreaks, importedRows, importedDays));
 
       // General sanity check
       importer.addTask(new SanityCheckTask(daily));
