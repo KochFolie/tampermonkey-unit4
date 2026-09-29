@@ -187,7 +187,11 @@ export class CloseEditingModeTask extends ImportTask {
 }
 
 export class SanityCheckTask extends ImportTask {
-    constructor(private data: SanityDaily) {
+    /**
+     * @param nonWorkingHours hours of the week that are no work but count towards the normal hours
+     *   (e.g. vacation, overtime compensation)
+     */
+    constructor(private data: SanityDaily, private nonWorkingHours: number = 0) {
         super('sanity-check');
     }
 
@@ -235,11 +239,12 @@ export class SanityCheckTask extends ImportTask {
             }
         });
         const normalHours = SanityCheckTask.normalHours();
-        if (sumWorkingTime < normalHours) {
-            errors.push("Working time issue: total working time less than " + normalHours + " hours (normal hours): " + sumWorkingTime);
+        const nonWorking = this.nonWorkingHours > 0 ? " + " + this.nonWorkingHours + " non-working" : "";
+        if (sumWorkingTime + this.nonWorkingHours < normalHours) {
+            errors.push("Working time issue: total working time less than " + normalHours + " hours (normal hours): " + sumWorkingTime + nonWorking);
         }
-        if (sumBookedHours < normalHours) {
-            errors.push("Booked hours issue: total booked hours less than " + normalHours + " hours (normal hours): " + sumBookedHours);
+        if (sumBookedHours + this.nonWorkingHours < normalHours) {
+            errors.push("Booked hours issue: total booked hours less than " + normalHours + " hours (normal hours): " + sumBookedHours + nonWorking);
         }
 
         if (errors.length > 0) {

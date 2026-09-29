@@ -58,7 +58,7 @@ export class Importer {
             case 'CloseEditingModeTask':
                 return new CloseEditingModeTask();
             case 'SanityCheckTask':
-                return new SanityCheckTask(taskData.data);
+                return new SanityCheckTask(taskData.data, taskData.nonWorkingHours);
         }
 
         // tasks from other modules
