@@ -920,6 +920,12 @@ export class Timesheetimport extends AbstractModule {
 
   // import JSON data, returns false (after telling the user) if the data is not valid
   private importJson(text: string): boolean {
+    const json = Timesheetimport.parseJsonImport(text);
+    return json !== null && this.importJsonData(json.data, json.days);
+  }
+
+  // parse JSON import data (old and new format), returns null (after telling the user) if it is not valid
+  private static parseJsonImport(text: string): { data: ImportWorkOrder[], days: ImportWorkingHours } | null {
     try {
       const json = JSON.parse(text) as ImportFormat|ImportFormatOld;
       // check if we have old or new format
@@ -964,6 +970,17 @@ export class Timesheetimport extends AbstractModule {
       }
       */
 
+      return { data, days };
+    } catch (e) {
+      console.error(e);
+      alert("Import data must be valid JSON");
+      return null;
+    }
+  }
+
+  // create and run the import tasks for parsed JSON data, returns false (after telling the user) on errors
+  private importJsonData(data: ImportWorkOrder[], days: ImportWorkingHours): boolean {
+    try {
       const importer = Importer.getInstance();
 
       // import work orders
