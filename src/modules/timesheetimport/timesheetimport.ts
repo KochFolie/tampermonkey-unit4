@@ -2,7 +2,7 @@ import { Configuration } from "../../configuration";
 import { AbstractModule } from '../AbstractModule';
 import { Utils } from "../global/utils";
 import { Importer } from './importer/importer';
-import { CloseEditingModeTask, SanityCheckTask } from "./importer/importtask";
+import { CloseEditingModeTask, readNormalHours, SanityCheckTask } from "./importer/importtask";
 import { WorkingRowImportTask } from "./importer/workinghours";
 import { ActivityImportTask, DescriptionImportTask, EmptyRowStartWorkOrderImportTask, RowHoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
 import './timesheetimport.less';
@@ -46,6 +46,15 @@ export type FtZEntry = {
   comment: string;        // I - Kommentar
 }
 
+// missing hours of the week, to be booked as overtime compensation on the given weekdays
+type FtZOvertimeFill = {
+  workOrder: string;                       // incl. activity, e.g. "950000-10000 (908)"
+  hours: { [weekday: string]: number };    // weekday token (mon, tue, ...) -> hours
+  booked: number;
+  normal: number;
+  missing: number;
+};
+
 export class Timesheetimport extends AbstractModule {
   // max waiting time for a field to be available / get focus
   private static readonly retrySeconds = 10;
@@ -84,6 +93,9 @@ export class Timesheetimport extends AbstractModule {
   private ftzCorrectionInputs: Map<string, HTMLInputElement> = new Map();
   // a row has already been opened for the workorder lookup, do not try again
   private ftzLookupRowRequested = false;
+  // proposal to fill up the missing hours of the week with overtime compensation (FtZ review)
+  private ftzOvertimeFill: FtZOvertimeFill | null = null;
+  private ftzOvertimeCheckbox: HTMLInputElement | null = null;
   private buttonFailed!: HTMLButtonElement;
 
   // ----------------------------------------------------------------------
@@ -251,6 +263,8 @@ export class Timesheetimport extends AbstractModule {
   // reset the FtZ dialog back to the paste view
   private resetFtZView() {
     this.ftzEntries = [];
+    this.ftzOvertimeFill = null;
+    this.ftzOvertimeCheckbox = null;
     this.jsonReview = null;
     this.ftzOutsideEntries = [];
     this.ftzCorrectionInputs = new Map();
@@ -332,7 +346,10 @@ export class Timesheetimport extends AbstractModule {
         return;
       }
 
-      if (missing.length > 0 || invalid.length > 0 || this.ftzOutsideEntries.length > 0) {
+      // offer to fill up the week to the normal hours with overtime compensation
+      this.ftzOvertimeFill = this.ftzOvertimeProposal();
+
+      if (missing.length > 0 || invalid.length > 0 || this.ftzOutsideEntries.length > 0 || this.ftzOvertimeFill !== null) {
         this.renderFtZCorrections(invalid, missing);
         return;
       }
@@ -553,6 +570,30 @@ export class Timesheetimport extends AbstractModule {
         hoursByDay.set(token, (hoursByDay.get(token) ?? 0) + hours);
       }
     });
+
+    // fill up the missing hours of the week with overtime compensation, if accepted in the review.
+    // Its times are unknown, so it never counts for the working hours or the breaks.
+    const fill = this.ftzOvertimeCheckbox?.checked ? this.ftzOvertimeFill : null;
+    if (fill) {
+      const { workOrder, activity } = Timesheetimport.splitFtZWorkOrder(fill.workOrder);
+      const nonPresence = Configuration.getInstance().isNonPresence(workOrder, activity);
+      const key = [workOrder, activity, ''].join('\u0000');
+      let group = groups.get(key);
+      if (!group) {
+        group = { wo: { workOrder, activity, timeCode: '', description: '' }, hours: new Map<string, number>() };
+        groups.set(key, group);
+      }
+      const fillGroup = group;
+      Object.entries(fill.hours).forEach(([token, hours]) => {
+        fillGroup.hours.set(token, (fillGroup.hours.get(token) ?? 0) + hours);
+        sumHours += hours;
+        if (nonPresence) {
+          nonWorkingHours += hours;
+        } else {
+          hoursByDay.set(token, (hoursByDay.get(token) ?? 0) + hours);
+        }
+      });
+    }
 
     // derive the break per weekday as the sum of the gaps between consecutive bookings. Non-presence
     // bookings within the working hours (clipped to them) fill gaps as well, they are no break.
@@ -801,6 +842,39 @@ export class Timesheetimport extends AbstractModule {
     // context for Unit4's workorder lookup, only available while a time entry row is in editing mode
     const lookupContext = invalidWorkOrders.length > 0 ? this.ftzLookupContext() : null;
 
+    // offer to fill up the missing hours of the week with overtime compensation (FtZ only)
+    const fill = this.jsonReview ? null : this.ftzOvertimeFill;
+    const fillChecked = this.ftzOvertimeCheckbox?.checked ?? false;
+    this.ftzOvertimeCheckbox = null;
+    if (fill) {
+      const info = document.createElement("div");
+      info.classList.add("ftzCorrection__info");
+
+      const heading = document.createElement("p");
+      heading.classList.add("ftzCorrection__heading");
+      heading.textContent = `Diese Woche sind ${Utils.toLocaleString(fill.booked)} h gebucht, Soll laut Unit4 (Normal hours): ${Utils.toLocaleString(fill.normal)} h. Es fehlen ${Utils.toLocaleString(fill.missing)} h.`;
+      info.appendChild(heading);
+
+      const label = document.createElement("label");
+      label.classList.add("ftzCorrection__check");
+      const checkbox = document.createElement("input");
+      checkbox.setAttribute("type", "checkbox");
+      checkbox.checked = fillChecked;
+      label.appendChild(checkbox);
+      label.appendChild(document.createTextNode(` Fehlende Stunden als Überstundenabbau buchen (${fill.workOrder})`));
+      info.appendChild(label);
+      this.ftzOvertimeCheckbox = checkbox;
+
+      const weekday = (token: string) => Object.keys(Timesheetimport.ftzWeekdayToken).find(de => Timesheetimport.ftzWeekdayToken[de] === token) ?? token;
+      const distribution = document.createElement("div");
+      distribution.classList.add("ftzCorrection__occurrence");
+      distribution.textContent = 'Verteilung: ' + Object.entries(fill.hours)
+        .map(([token, hours]) => `${weekday(token)} ${Utils.toLocaleString(hours)} h`).join(' · ');
+      info.appendChild(distribution);
+
+      this.ftzCorrectionContainer.appendChild(info);
+    }
+
     // warning block for bookings without any workorder (does not block the import)
     if (missingEntries.length > 0) {
       const warning = document.createElement("div");
@@ -901,9 +975,73 @@ export class Timesheetimport extends AbstractModule {
     this.ftzCorrectionContainer.style.display = 'block';
     this.ftzOkButton.innerHTML = invalidWorkOrders.length > 0
       ? "<span>Übernehmen &amp; Import</span>"
-      : "<span>Trotzdem importieren</span>";
+      : missingEntries.length > 0 || this.ftzOutsideEntries.length > 0
+        ? "<span>Trotzdem importieren</span>"
+        : "<span>Start Import</span>";
     const firstInput = this.ftzCorrectionContainer.querySelector('input') as HTMLInputElement | null;
     if (firstInput) { firstInput.focus(); }
+  }
+
+  // proposal to fill up the booked hours of the Excel data to the timesheet's normal hours with
+  // overtime compensation, null if nothing is missing or the normal hours / work order are unknown
+  private ftzOvertimeProposal(): FtZOvertimeFill | null {
+    const normal = readNormalHours(document);
+    const client = this.ftzClient();
+    const workOrder = client ? Configuration.getInstance().overtimeWorkOrder(client) : null;
+    if (normal === null || workOrder === null) {
+      return null;
+    }
+
+    // hours per weekday of the bookings that will be imported (no breaks, no missing workorders)
+    const dayHours = new Map<string, number>();
+    this.ftzEntries.forEach(entry => {
+      const token = Timesheetimport.ftzWeekdayToken[entry.weekday];
+      const hours = Utils.hoursFromTimestring(entry.duration);
+      if (token && !Timesheetimport.isBreakEntry(entry) && entry.workOrder !== '' && hours > 0) {
+        dayHours.set(token, (dayHours.get(token) ?? 0) + hours);
+      }
+    });
+    const booked = [...dayHours.values()].reduce((sum, hours) => sum + hours, 0);
+    const missing = Math.round((normal - booked) * 100) / 100;
+    if (dayHours.size === 0 || missing <= 0) {
+      return null;
+    }
+    return { workOrder, hours: Timesheetimport.distributeHours(dayHours, normal, missing), booked, normal, missing };
+  }
+
+  // distribute the missing hours over the days with bookings (part-time: only the days worked):
+  // each day is filled up towards its share of the normal hours, in quarter hours; the rounding
+  // remainder goes to the day with the largest gap, so that the total matches exactly
+  private static distributeHours(dayHours: Map<string, number>, normal: number, missing: number): { [weekday: string]: number } {
+    const share = normal / dayHours.size;
+    const gaps = [...dayHours].map(([day, hours]) => ({ day, gap: Math.max(0, share - hours) }));
+    // the gaps add up to at least the missing hours, scale them down if some days are above their share
+    const sumGaps = gaps.reduce((sum, g) => sum + g.gap, 0);
+    const result: { [weekday: string]: number } = {};
+    let assigned = 0;
+    gaps.forEach(g => {
+      const hours = Math.round(g.gap * missing / sumGaps * 4) / 4;
+      if (hours > 0) {
+        result[g.day] = hours;
+        assigned += hours;
+      }
+    });
+    const rest = Math.round((missing - assigned) * 100) / 100;
+    if (rest !== 0) {
+      const largest = gaps.reduce((a, b) => b.gap > a.gap ? b : a);
+      result[largest.day] = Math.max(0, Math.round(((result[largest.day] ?? 0) + rest) * 100) / 100);
+    }
+    return result;
+  }
+
+  // Unit4 client of the timesheet (e.g. "DE3") from the time entry grid context
+  private ftzClient(): string | null {
+    const grid = this.section.querySelector('th[data-type="cell-workorder"]')?.closest('table[data-context]') as HTMLElement | null;
+    try {
+      return grid?.dataset.context ? atob(grid.dataset.context).split('^')[3] ?? null : null;
+    } catch {
+      return null;
+    }
   }
 
   // context for Unit4's workorder lookup service. It is bound to a time entry row in editing mode:
