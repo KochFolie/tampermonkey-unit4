@@ -669,8 +669,10 @@ export class Timesheetimport extends AbstractModule {
 
     importer.addTask(new CloseEditingModeTask());
 
-    // book the breaks into Unit4's automatically inserted activity-999 row
-    if (breaksByDay.size > 0) {
+    // book the breaks into Unit4's automatically inserted activity-999 row. Without breaks in the
+    // Excel, still clear old breaks of a previous import on the imported days (e.g. a day that
+    // became a sick day), but only if there are any, as opening the row reloads the page.
+    if (breaksByDay.size > 0 || this.ftzBreakRowHasHours(importDays)) {
       const breakGroupId = 'ftz-breaks';
       const breakWo: WorkOrder = { workOrder: '', activity: '999', timeCode: '', description: 'Internal - Break Time' };
       importer.addTask(new StartBreakRowImportTask(breakGroupId));
@@ -1061,6 +1063,22 @@ export class Timesheetimport extends AbstractModule {
     } catch {
       return null;
     }
+  }
+
+  // does the break row of the timesheet have hours on one of the given weekdays (mon, tue, ...)?
+  private ftzBreakRowHasHours(weekdays: Set<string>): boolean {
+    const headers = [...this.section.querySelectorAll('th[data-type=cell-weekday]')];
+    const row = [...this.section.querySelectorAll('tr.ListItem, tr.AltListItem, tr.EditRow')].find(r => Timesheetimport.isBreakRow(r));
+    if (!row) {
+      return false;
+    }
+    const cells = row.querySelectorAll('td[data-type=cell-weekday]');
+    return headers.some((head, i) => {
+      const token = (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase().slice(0, 3);
+      const cell = cells[i];
+      const value = (cell?.querySelector('.InputCell input') as HTMLInputElement | null)?.value ?? cell?.textContent ?? '';
+      return weekdays.has(token) && (Utils.toNumber(value.trim()) || 0) !== 0;
+    });
   }
 
   // the break row (activity 999) never offers workorders in the lookup
