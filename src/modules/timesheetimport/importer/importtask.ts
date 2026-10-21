@@ -53,6 +53,23 @@ export function headerMatchesDay(head: HTMLElement, day: string): boolean {
   return (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase().startsWith(day);
 }
 
+/**
+ * Expected hours of the timesheet from the "Normal hours" field of the timesheet header
+ * (already reduced by bank holidays, part-time and month boundaries), null if not available.
+ */
+export function readNormalHours(doc: Document): number | null {
+  for (const td of doc.querySelectorAll('td.label')) {
+    if (td.textContent?.includes('Normal hours')) {
+      const input = td.nextElementSibling?.querySelector('input[type="text"]') as HTMLInputElement | null;
+      const hours = input ? Utils.toNumber(input.value) : NaN;
+      if (!isNaN(hours)) {
+        return hours;
+      }
+    }
+  }
+  return null;
+}
+
 export type FoundField = {
   field?: HTMLInputElement;
   value: string;
@@ -199,19 +216,9 @@ export class SanityCheckTask extends ImportTask {
         return "Final sanity check";
     }
 
-    // expected hours of this timesheet from the "Normal hours" field of the timesheet header
-    // (already reduced by bank holidays, part-time and month boundaries), 40 if not available
+    // expected hours of this timesheet, 40 if the "Normal hours" field is not available
     private static normalHours(): number {
-        for (const td of ImportTask.section.ownerDocument.querySelectorAll('td.label')) {
-            if (td.textContent?.includes('Normal hours')) {
-                const input = td.nextElementSibling?.querySelector('input[type="text"]') as HTMLInputElement | null;
-                const hours = input ? Utils.toNumber(input.value) : NaN;
-                if (!isNaN(hours)) {
-                    return hours;
-                }
-            }
-        }
-        return 40;
+        return readNormalHours(ImportTask.section.ownerDocument) ?? 40;
     }
 
     async run(): Promise<ImportTaskResult> {
