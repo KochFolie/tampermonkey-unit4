@@ -27,6 +27,15 @@ export const DEFAULT_NON_PRESENCE_RULES: string[] = [
 
 type NonPresenceRule = { exclude: boolean, workOrder: RegExp, activity: RegExp | null };
 
+/**
+ * Work order (with activity) to book overtime compensation per Unit4 client, used by the Excel
+ * import to fill up missing hours of a week. Users can override or add clients in the configuration.
+ */
+export const DEFAULT_OVERTIME_WORK_ORDERS: { [client: string]: string } = {
+  'DE3': '950000-10000 (908)',
+  'DE2': '940000-10000 (908)',  // assumed to work like DE3
+};
+
 export class Configuration {
   private static instance: Configuration = new Configuration();
 
@@ -105,6 +114,12 @@ export class Configuration {
           },
           nonPresenceWorkOrders: {
             label: '[Timesheet Entry]: Work orders not counting as presence<copy>Bookings on these work orders (e.g. vacation, overtime compensation) are imported with their hours, but their times do not count for the working hours (From/To) and the breaks. One rule per line, optionally with an activity in parentheses and "*" as wildcard; text behind the rule is ignored.<br/>A line starting with "-" removes a default rule or adds an exception, e.g. "-950000-10000 (906)".<br/>Default rules: ' + DEFAULT_NON_PRESENCE_RULES.join(', ') + '</copy>',
+            labelPos: 'left',
+            type: 'textarea',
+            default: ''
+          },
+          overtimeWorkOrders: {
+            label: '[Timesheet Entry]: Work order for overtime compensation per client<copy>Used by the Excel import to fill up missing hours of a week. One client per line with the work order and activity, e.g. "DE3 950000-10000 (908)"; "DE3 -" disables it for a client.<br/>Defaults: ' + Object.entries(DEFAULT_OVERTIME_WORK_ORDERS).map(([client, wo]) => client + ' ' + wo).join(', ') + '</copy>',
             labelPos: 'left',
             type: 'textarea',
             default: ''
@@ -261,6 +276,23 @@ export class Configuration {
       rule.workOrder.test(workOrder) && (rule.activity === null || rule.activity.test(activity));
     const rules = this.nonPresenceRules();
     return rules.some(r => !r.exclude && matches(r)) && !rules.some(r => r.exclude && matches(r));
+  }
+
+  /**
+   * Work order (e.g. "950000-10000 (908)") to book overtime compensation for a Unit4 client
+   * (e.g. "DE3"), null if there is none.
+   */
+  overtimeWorkOrder(client: string): string | null {
+    const workOrders: { [client: string]: string } = { ...DEFAULT_OVERTIME_WORK_ORDERS };
+    const raw = GM_config.get('overtimeWorkOrders');
+    (typeof raw === 'string' ? raw.split(/\r?\n/) : []).forEach(line => {
+      const match = line.trim().match(/^(\S+)\s+(.+)$/);
+      if (match) {
+        workOrders[match[1].toUpperCase()] = match[2].trim();
+      }
+    });
+    const workOrder = workOrders[client.toUpperCase()];
+    return workOrder && workOrder !== '-' ? workOrder : null;
   }
 
   ftzDescriptionRules(): FtZDescriptionRule[] {
