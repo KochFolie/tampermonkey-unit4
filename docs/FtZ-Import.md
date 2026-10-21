@@ -41,6 +41,8 @@ If something needs your attention, a review view is shown before the import star
   one, or type to search again. To be able to search, Unit4 needs a time entry row in
   editing mode, so the page reloads once and the dialog opens again by itself.
   Your corrections are remembered and prefilled the next time.
+* **Missing hours**: if your bookings stay below the "Normal hours" of the timesheet, you can
+  tick a checkbox to book the missing hours as overtime compensation, see below.
 
 ## 4. Check and save
 
@@ -99,6 +101,23 @@ option "Work orders not counting as presence", one rule per line:
 Your rules are combined with the defaults above, so new defaults that come with an update apply
 automatically. If a default is missing or wrong for everybody, please tell us so it can be
 fixed for all.
+
+# Filling up missing hours with overtime compensation
+
+If the bookings of the Excel data stay below the "Normal hours" of your timesheet, the review
+view offers to book the missing hours as overtime compensation. It is unchecked by default and
+shows how the hours would be distributed.
+
+* The missing hours are distributed over the **days with bookings only** (including vacation or
+  sick days), so part-time employees don't get hours on days they don't work. Each day is filled
+  up towards its share of the normal hours, in quarter hours.
+* The work order depends on the Unit4 client of your timesheet: `950000-10000 (908)` for DE3 and
+  `940000-10000 (908)` for DE2. Other clients can be added (or the default changed) with the
+  configuration option "Work order for overtime compensation per client", e.g.
+  `NL 800000-10000 (908)`; `DE3 -` disables the offer for a client.
+* Overtime compensation does not count as presence, so it does not change the working hours.
+* Nothing is offered if the timesheet shows no "Normal hours" or there is no work order for
+  your client. Bookings made directly in Unit4 (not in the Excel) are not taken into account.
 
 # Descriptions
 
