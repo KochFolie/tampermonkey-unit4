@@ -8,6 +8,19 @@ export type WorkOrder = {
     description: string;
 }
 
+/**
+ * Does a time entry row belong to this work order? An empty activity, time code or description in
+ * the import data (e.g. the FtZ import) matches whatever Unit4 prefilled (activity 100, time code 0,
+ * its default description).
+ */
+export function rowMatchesWorkOrder(wo: WorkOrder, row: { workOrder?: string, activity?: string, timeCode?: string, description?: string }): boolean {
+    const matches = (expected: string | undefined, actual: string | undefined) => !expected || expected === actual;
+    return wo.workOrder === row.workOrder
+        && matches(wo.activity, row.activity)
+        && matches(wo.timeCode, row.timeCode)
+        && (matches(wo.description, row.description) || row.description === 'Internal - Break Time');
+}
+
 export abstract class WOImportTask extends ImportTask {
     private static addButton: HTMLButtonElement;
     public static setAddButton(button: HTMLButtonElement) {
@@ -106,15 +119,8 @@ export abstract class WOImportTask extends ImportTask {
         return this.waitForElement('tr.EditRow');
     }
 
-    // does a row belong to this work order? An empty activity, time code or description in the
-    // import data (e.g. the FtZ import) matches whatever Unit4 prefilled (activity 100, time code 0,
-    // its default description).
     private matchesRow(workOrder?: string, activity?: string, timeCode?: string, description?: string): boolean {
-        const matches = (expected: string | undefined, actual: string | undefined) => !expected || expected === actual;
-        return this.workOrder.workOrder === workOrder
-            && matches(this.workOrder.activity, activity)
-            && matches(this.workOrder.timeCode, timeCode)
-            && (matches(this.workOrder.description, description) || description === 'Internal - Break Time');
+        return rowMatchesWorkOrder(this.workOrder, { workOrder, activity, timeCode, description });
     }
 
 }
