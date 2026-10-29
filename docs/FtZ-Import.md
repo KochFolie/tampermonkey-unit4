@@ -145,7 +145,8 @@ processing the timesheets afterwards.
 
 You can import the same week again, e.g. after correcting the Excel: rows that already
 exist (same work order, activity and description) are updated instead of added a second time, and
-hours that moved to another day are cleared.
+hours that moved to another day are cleared. Rows, working hours and breaks that did not change
+are skipped, so a repeated import only takes as long as the changes need.
 
 If you changed the **work order or description** of a booking, the import cannot know that
 it is the same booking: it adds a new row and the old one keeps its hours. The summary
