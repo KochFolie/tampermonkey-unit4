@@ -4,7 +4,7 @@ import { Utils } from "../global/utils";
 import { Importer } from './importer/importer';
 import { CloseEditingModeTask, readNormalHours, SanityCheckTask } from "./importer/importtask";
 import { WorkingRowImportTask } from "./importer/workinghours";
-import { ActivityImportTask, DescriptionImportTask, EmptyRowStartWorkOrderImportTask, RowHoursImportTask, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
+import { ActivityImportTask, DescriptionImportTask, EmptyRowStartWorkOrderImportTask, RowHoursImportTask, rowMatchesWorkOrder, StartBreakRowImportTask, StartWorkOrderImportTask, TimecodeImportTask, WOImportTask, WorkOrder, WorkOrderImportTask, WorkOrderSummaryTask } from "./importer/workorders";
 import './timesheetimport.less';
 
 export type ImportWorkingHoursDay = {
@@ -45,6 +45,16 @@ export type FtZEntry = {
   ticket: string;         // H - Ticket
   comment: string;        // I - Kommentar
 }
+
+// a time entry row as currently shown in the timesheet, to skip unchanged rows on a repeated import
+type FtZGridRow = {
+  workOrder: string;
+  activity: string;
+  timeCode: string;
+  description: string;
+  isBreak: boolean;
+  hours: Map<string, number>;   // weekday token (mon, tue, ...) -> hours
+};
 
 // missing hours of the week, to be booked as overtime compensation on the given weekdays
 type FtZOvertimeFill = {
@@ -641,8 +651,16 @@ export class Timesheetimport extends AbstractModule {
         starts[token] = day.start;
         ends[token] = day.end;
       });
-      importer.addTask(new WorkingRowImportTask('ftz-workinghours|start', "start", starts));
-      importer.addTask(new WorkingRowImportTask('ftz-workinghours|end', "end", ends));
+      // activating a row reloads the page: skip rows that already have these times
+      const current = this.ftzWorkingHours();
+      const unchanged = (row: Map<string, number> | undefined, times: { [weekday: string]: string }) =>
+        !!row && Object.entries(times).every(([token, time]) => Math.abs((row.get(token) ?? NaN) - Utils.hoursFromTimestring(time)) < 0.001);
+      if (!unchanged(current?.start, starts)) {
+        importer.addTask(new WorkingRowImportTask('ftz-workinghours|start', "start", starts));
+      }
+      if (!unchanged(current?.end, ends)) {
+        importer.addTask(new WorkingRowImportTask('ftz-workinghours|end', "end", ends));
+      }
     }
 
     importer.addTask(new CloseEditingModeTask());
@@ -652,7 +670,19 @@ export class Timesheetimport extends AbstractModule {
     const withAllDays = (hours: Map<string, number>) =>
       Object.fromEntries([...importDays].map(token => [token, hours.get(token) ?? 0]));
 
+    // rows that already exist with the same hours on all imported days are skipped: checking them
+    // would open each row and reload the page for nothing
+    const gridRows = this.ftzGridRows();
+    const sameHours = (current: Map<string, number>, hours: { [weekday: string]: number }) =>
+      Object.entries(hours).every(([token, h]) => Math.abs((current.get(token) ?? 0) - h) < 0.001);
+    let unchangedRows = 0;
+
     groups.forEach((group, key) => {
+      const existing = gridRows.find(row => !row.isBreak && rowMatchesWorkOrder(group.wo, row));
+      if (existing && sameHours(existing.hours, withAllDays(group.hours))) {
+        unchangedRows++;
+        return;
+      }
       const groupId = ['ftz', key].join('|');
       importer.addTask(new EmptyRowStartWorkOrderImportTask(groupId, group.wo));
       importer.addTask(new WorkOrderImportTask(groupId, group.wo));
@@ -669,15 +699,20 @@ export class Timesheetimport extends AbstractModule {
 
     importer.addTask(new CloseEditingModeTask());
 
-    // book the breaks into Unit4's automatically inserted activity-999 row. Without breaks in the
-    // Excel, still clear old breaks of a previous import on the imported days (e.g. a day that
-    // became a sick day), but only if there are any, as opening the row reloads the page.
-    if (breaksByDay.size > 0 || this.ftzBreakRowHasHours(importDays)) {
+    // book the breaks into Unit4's automatically inserted activity-999 row, also to clear old
+    // breaks of a previous import (e.g. a day that became a sick day). Skipped if the break row
+    // already has these values, as opening the row reloads the page.
+    const breakRow = gridRows.find(row => row.isBreak);
+    if (breakRow ? !sameHours(breakRow.hours, withAllDays(breaksByDay)) : breaksByDay.size > 0) {
       const breakGroupId = 'ftz-breaks';
       const breakWo: WorkOrder = { workOrder: '', activity: '999', timeCode: '', description: 'Internal - Break Time' };
       importer.addTask(new StartBreakRowImportTask(breakGroupId));
       importer.addTask(new RowHoursImportTask(breakGroupId, breakWo, withAllDays(breaksByDay)));
       importer.addTask(new CloseEditingModeTask());
+    }
+
+    if (unchangedRows > 0) {
+      console.log(`FtZ import: ${unchangedRows} unchanged row(s) skipped`);
     }
 
     const importedRows = [...groups.values()].map(g => ({ workOrder: g.wo.workOrder, description: g.wo.description }));
@@ -1065,20 +1100,54 @@ export class Timesheetimport extends AbstractModule {
     }
   }
 
-  // does the break row of the timesheet have hours on one of the given weekdays (mon, tue, ...)?
-  private ftzBreakRowHasHours(weekdays: Set<string>): boolean {
-    const headers = [...this.section.querySelectorAll('th[data-type=cell-weekday]')];
-    const row = [...this.section.querySelectorAll('tr.ListItem, tr.AltListItem, tr.EditRow')].find(r => Timesheetimport.isBreakRow(r));
-    if (!row) {
-      return false;
+  // time entry rows as currently shown in the timesheet (values of read-only and editable rows)
+  private ftzGridRows(): FtZGridRow[] {
+    const tokens = [...this.section.querySelectorAll('th[data-type=cell-weekday]')]
+      .map(head => (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase().slice(0, 3));
+    // the input of an editable cell or the value div of a read-only one (not the description
+    // the timeentry module appends to some cells)
+    const value = (td: Element | null | undefined, valueDiv: string) =>
+      ((td?.querySelector('.InputCell input') as HTMLInputElement | null)?.value ?? td?.querySelector(valueDiv)?.textContent ?? '').trim();
+    return [...this.section.querySelectorAll('tr.ListItem, tr.AltListItem, tr.EditRow')]
+      .filter(row => row.querySelector('td[data-type="cell-workorder"]'))
+      .map(row => {
+        const field = (type: string) => value(row.querySelector(`td[data-type="${type}"]`), 'div.ww.ellipsis');
+        const hours = new Map<string, number>();
+        row.querySelectorAll('td[data-type=cell-weekday]').forEach((td, i) => {
+          if (tokens[i]) {
+            hours.set(tokens[i], Utils.toNumber(value(td, 'div.ww')) || 0);
+          }
+        });
+        return {
+          workOrder: field('cell-workorder'),
+          activity: field('cell-activity'),
+          timeCode: field('cell-timecode'),
+          description: field('cell-description'),
+          isBreak: Timesheetimport.isBreakRow(row),
+          hours
+        };
+      });
+  }
+
+  // current From (first row) and To (second row) times of the working hours per weekday token,
+  // as decimal hours (NaN if empty), null if the working hours section is not available
+  private ftzWorkingHours(): { start: Map<string, number>, end: Map<string, number> } | null {
+    if (!this.sectionWorkingHours) {
+      return null;
     }
-    const cells = row.querySelectorAll('td[data-type=cell-weekday]');
-    return headers.some((head, i) => {
-      const token = (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase().slice(0, 3);
-      const cell = cells[i];
-      const value = (cell?.querySelector('.InputCell input') as HTMLInputElement | null)?.value ?? cell?.textContent ?? '';
-      return weekdays.has(token) && (Utils.toNumber(value.trim()) || 0) !== 0;
-    });
+    const headers = [...this.sectionWorkingHours.querySelectorAll('.tmWorkinghours th')];
+    const rows = [...this.sectionWorkingHours.querySelectorAll('.ListItem, .AltListItem, .EditRow')];
+    const read = (row: Element | undefined) => {
+      const times = new Map<string, number>();
+      headers.forEach((head, i) => {
+        const token = (head.textContent ?? '').replace(/[_.\s]/g, '').toLowerCase().slice(0, 3);
+        const cell = row?.querySelector('td:nth-of-type(' + (i + 1) + ')');
+        const text = ((cell?.querySelector('.InputCell input') as HTMLInputElement | null)?.value ?? cell?.textContent ?? '').trim();
+        times.set(token, /^\d{1,2}:\d{2}/.test(text) ? Utils.hoursFromTimestring(text) : NaN);
+      });
+      return times;
+    };
+    return { start: read(rows[0]), end: read(rows[1]) };
   }
 
   // the break row (activity 999) never offers workorders in the lookup
