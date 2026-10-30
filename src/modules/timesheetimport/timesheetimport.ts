@@ -378,7 +378,9 @@ export class Timesheetimport extends AbstractModule {
         }
         const override = this.ftzRowOverrides.get(Timesheetimport.ftzRowKey(original, this.reviewDescription(entry)));
         // the correction may carry an activity as well, e.g. "950000-10000 (908)"
-        const corrected = Timesheetimport.splitFtZWorkOrder(override && override.value.trim() !== '' ? override.value : input.value);
+        // an empty or unchanged own correction (still the original workorder) falls back to the workorder's one
+        const ownValue = override?.value.trim() ?? '';
+        const corrected = Timesheetimport.splitFtZWorkOrder(ownValue !== '' && ownValue !== original ? ownValue : input.value);
         entry.workOrder = corrected.workOrder;
         if (corrected.activity !== '') {
           entry.activity = corrected.activity;
@@ -1026,7 +1028,7 @@ export class Timesheetimport extends AbstractModule {
           rows.set(description, [...(rows.get(description) ?? []), ...times]);
         });
         rows.forEach((times, description) => {
-          occurrences.appendChild(this.renderFtZRowOverride(wo, description, times, input, lookupContext));
+          occurrences.appendChild(this.renderFtZRowOverride(wo, description, times, lookupContext));
         });
         group.appendChild(occurrences);
 
@@ -1272,8 +1274,8 @@ export class Timesheetimport extends AbstractModule {
   }
 
   // one Unit4 row of an invalid workorder in the review: description and times, plus a link to give
-  // it a correction of its own (prefilled with the workorder's correction, with lookup suggestions)
-  private renderFtZRowOverride(workOrder: string, description: string, times: string[], workOrderInput: HTMLInputElement, lookupContext: string | null): HTMLElement {
+  // it a correction of its own (starting from the original workorder, with lookup suggestions)
+  private renderFtZRowOverride(workOrder: string, description: string, times: string[], lookupContext: string | null): HTMLElement {
     const key = Timesheetimport.ftzRowKey(workOrder, description);
     const item = document.createElement("div");
     item.classList.add("ftzCorrection__occurrence", "ftzCorrection__rowItem");
@@ -1294,7 +1296,7 @@ export class Timesheetimport extends AbstractModule {
     item.appendChild(editor);
 
     toggle.addEventListener('click', () => {
-      // own correction for this row, prefilled with the current correction of the workorder
+      // own correction for this row, starting from the original workorder of the Excel / JSON data
       editor.innerHTML = '';
       const row = document.createElement("div");
       row.classList.add("ftzCorrection__row");
@@ -1302,7 +1304,7 @@ export class Timesheetimport extends AbstractModule {
       input.setAttribute("type", "text");
       input.setAttribute("placeholder", "950100-10005");
       input.classList.add("ftzCorrection__input");
-      input.value = workOrderInput.value;
+      input.value = workOrder;
       row.appendChild(input);
 
       const reset = document.createElement("button");
@@ -1323,7 +1325,7 @@ export class Timesheetimport extends AbstractModule {
         const suggestions = document.createElement("div");
         suggestions.classList.add("ftzCorrection__suggestions");
         editor.appendChild(suggestions);
-        // search for the original workorder (e.g. all 123456-*), not the correction prefilled above
+        // search for the original workorder, e.g. all 123456-*
         this.bindFtZSuggestions(input, suggestions, lookupContext, Timesheetimport.ftzSearchTerm(workOrder));
       }
 
