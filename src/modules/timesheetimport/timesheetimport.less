@@ -51,6 +51,35 @@
         border-radius: 6px;
     }
 
+    &__rowItem {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 12px;
+    }
+
+    &__linkButton {
+        padding: 0 4px;
+        border: 0;
+        background: transparent;
+        color: #2a6ab3;
+        font-size: 12px;
+        cursor: pointer;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+
+    &__override {
+        flex: 1 0 100%;
+        margin: 4px 0 6px 16px;
+
+        .ftzCorrection__row {
+            margin-bottom: 4px;
+        }
+    }
+
     &__check {
         display: block;
         margin: 4px 0 6px 0;

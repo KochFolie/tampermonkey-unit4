@@ -101,6 +101,9 @@ export class Timesheetimport extends AbstractModule {
   // bookings on weekdays the current timesheet does not contain (skipped by the import)
   private ftzOutsideEntries: FtZEntry[] = [];
   private ftzCorrectionInputs: Map<string, HTMLInputElement> = new Map();
+  // corrections that differ from the workorder's correction for single rows (original workorder +
+  // description, see ftzRowKey), e.g. "123456-10002" for the meeting bookings on "123456"
+  private ftzRowOverrides: Map<string, HTMLInputElement> = new Map();
   // a row has already been opened for the workorder lookup, do not try again
   private ftzLookupRowRequested = false;
   // proposal to fill up the missing hours of the week with overtime compensation (FtZ review)
@@ -278,6 +281,7 @@ export class Timesheetimport extends AbstractModule {
     this.jsonReview = null;
     this.ftzOutsideEntries = [];
     this.ftzCorrectionInputs = new Map();
+    this.ftzRowOverrides = new Map();
     this.ftzCorrectionContainer.innerHTML = '';
     this.ftzCorrectionContainer.style.display = 'none';
     this.ftzDialogEntry.style.display = '';
@@ -364,22 +368,30 @@ export class Timesheetimport extends AbstractModule {
         return;
       }
     } else {
-      // phase 2: apply the user corrections to the stored entries
-      this.ftzCorrectionInputs.forEach((input, original) => {
+      // phase 2: apply the user corrections to the stored entries: a correction for a single row
+      // wins over the correction of its workorder
+      this.reviewEntries().forEach(entry => {
+        const original = entry.workOrder;
+        const input = this.ftzCorrectionInputs.get(original);
+        if (!input) {
+          return;
+        }
+        const override = this.ftzRowOverrides.get(Timesheetimport.ftzRowKey(original, this.reviewDescription(entry)));
         // the correction may carry an activity as well, e.g. "950000-10000 (908)"
+        const corrected = Timesheetimport.splitFtZWorkOrder(override && override.value.trim() !== '' ? override.value : input.value);
+        entry.workOrder = corrected.workOrder;
+        if (corrected.activity !== '') {
+          entry.activity = corrected.activity;
+        }
+      });
+
+      // remember valid corrections of the workorders (incl. activity) so they are prefilled next time;
+      // corrections of single rows are not remembered, as descriptions change from week to week
+      this.ftzCorrectionInputs.forEach((input, original) => {
         const corrected = Timesheetimport.splitFtZWorkOrder(input.value);
-        // remember valid corrections (incl. activity) so the field is prefilled next time
         if (input.value.trim() !== original && Timesheetimport.workOrderPattern.test(corrected.workOrder)) {
           this.saveFtZCorrection(original, input.value.trim());
         }
-        this.reviewEntries().forEach(entry => {
-          if (entry.workOrder === original) {
-            entry.workOrder = corrected.workOrder;
-            if (corrected.activity !== '') {
-              entry.activity = corrected.activity;
-            }
-          }
-        });
       });
 
       // invalid workorders block the import until fixed; missing ones (FtZ only) are just a warning
@@ -408,8 +420,20 @@ export class Timesheetimport extends AbstractModule {
   }
 
   // entries whose workorders are reviewed: the JSON entries or the FtZ bookings
-  private reviewEntries(): { workOrder: string, activity?: string }[] {
+  private reviewEntries(): (ImportWorkOrder | FtZEntry)[] {
     return this.jsonReview ? this.jsonReview.data : this.ftzEntries;
+  }
+
+  // description of the Unit4 row an entry ends up in
+  private reviewDescription(entry: ImportWorkOrder | FtZEntry): string {
+    return this.jsonReview
+      ? (entry as ImportWorkOrder).description ?? ''
+      : Configuration.getInstance().formatFtZDescription(entry as FtZEntry);
+  }
+
+  // key of a Unit4 row in the review: original workorder + description
+  private static ftzRowKey(workOrder: string, description: string): string {
+    return workOrder + '\u0000' + description;
   }
 
   // open a time entry row for the workorder lookup. Unit4 reloads the page for that, so the pasted
@@ -871,6 +895,7 @@ export class Timesheetimport extends AbstractModule {
   // show the review view: non-blocking warnings for missing workorders and correction inputs for invalid ones
   private renderFtZCorrections(invalidWorkOrders: string[], missingEntries: FtZEntry[]) {
     this.ftzCorrectionInputs = new Map();
+    this.ftzRowOverrides = new Map();
     this.ftzCorrectionContainer.innerHTML = '';
 
     // remembered corrections from previous imports (column F -> corrected workorder)
@@ -988,17 +1013,20 @@ export class Timesheetimport extends AbstractModule {
           this.bindFtZSuggestions(input, suggestions, lookupContext, Timesheetimport.ftzSearchTerm(wo));
         }
 
-        // list every occurrence of this workorder so the user can identify it
+        // list the Unit4 rows of this workorder (bookings grouped by description) so the user can
+        // identify them; each row can get its own correction, e.g. a different suffix for meetings
         const occurrences = document.createElement("div");
         occurrences.classList.add("ftzCorrection__occurrences");
-        const lines = this.jsonReview
-          ? this.jsonReview.data.filter(e => e.workOrder === wo).map(Timesheetimport.formatJsonOccurrence)
-          : this.ftzEntries.filter(e => e.workOrder === wo).map(Timesheetimport.formatOccurrence);
-        lines.forEach(text => {
-          const line = document.createElement("div");
-          line.classList.add("ftzCorrection__occurrence");
-          line.textContent = text;
-          occurrences.appendChild(line);
+        const rows = new Map<string, string[]>();
+        this.reviewEntries().filter(e => e.workOrder === wo).forEach(e => {
+          const description = this.reviewDescription(e);
+          const times = this.jsonReview
+            ? ((e as ImportWorkOrder).time ?? []).map(t => `${t.date} (${t.hours})`)
+            : [`${(e as FtZEntry).weekday} ${(e as FtZEntry).start}–${(e as FtZEntry).end}`];
+          rows.set(description, [...(rows.get(description) ?? []), ...times]);
+        });
+        rows.forEach((times, description) => {
+          occurrences.appendChild(this.renderFtZRowOverride(wo, description, times, input, lookupContext));
         });
         group.appendChild(occurrences);
 
@@ -1243,10 +1271,67 @@ export class Timesheetimport extends AbstractModule {
     return entry.comment !== '' ? `${context} · ${entry.comment}` : context;
   }
 
-  // format a JSON entry as "Beschreibung · Datum (Stunden), ..." for the review lists
-  private static formatJsonOccurrence(entry: ImportWorkOrder): string {
-    const days = (entry.time ?? []).map(t => `${t.date} (${t.hours})`).join(', ');
-    return [entry.description, days].filter(v => v).join(' · ');
+  // one Unit4 row of an invalid workorder in the review: description and times, plus a link to give
+  // it a correction of its own (prefilled with the workorder's correction, with lookup suggestions)
+  private renderFtZRowOverride(workOrder: string, description: string, times: string[], workOrderInput: HTMLInputElement, lookupContext: string | null): HTMLElement {
+    const key = Timesheetimport.ftzRowKey(workOrder, description);
+    const item = document.createElement("div");
+    item.classList.add("ftzCorrection__occurrence", "ftzCorrection__rowItem");
+
+    const text = document.createElement("span");
+    text.textContent = `${description !== '' ? description : '(ohne Beschreibung)'} · ${times.join(', ')}`;
+    item.appendChild(text);
+
+    const toggle = document.createElement("button");
+    toggle.setAttribute("type", "button");
+    toggle.classList.add("ftzCorrection__linkButton");
+    toggle.textContent = "abweichend …";
+    item.appendChild(toggle);
+
+    const editor = document.createElement("div");
+    editor.classList.add("ftzCorrection__override");
+    editor.style.display = 'none';
+    item.appendChild(editor);
+
+    toggle.addEventListener('click', () => {
+      // own correction for this row, prefilled with the current correction of the workorder
+      editor.innerHTML = '';
+      const row = document.createElement("div");
+      row.classList.add("ftzCorrection__row");
+      const input = document.createElement("input");
+      input.setAttribute("type", "text");
+      input.setAttribute("placeholder", "950100-10005");
+      input.classList.add("ftzCorrection__input");
+      input.value = workOrderInput.value;
+      row.appendChild(input);
+
+      const reset = document.createElement("button");
+      reset.setAttribute("type", "button");
+      reset.classList.add("ftzCorrection__linkButton");
+      reset.title = "Wieder die Korrektur der Workorder verwenden";
+      reset.textContent = "✕";
+      reset.addEventListener('click', () => {
+        this.ftzRowOverrides.delete(key);
+        editor.innerHTML = '';
+        editor.style.display = 'none';
+        toggle.style.display = '';
+      });
+      row.appendChild(reset);
+      editor.appendChild(row);
+
+      if (lookupContext) {
+        const suggestions = document.createElement("div");
+        suggestions.classList.add("ftzCorrection__suggestions");
+        editor.appendChild(suggestions);
+        this.bindFtZSuggestions(input, suggestions, lookupContext, Timesheetimport.ftzSearchTerm(input.value || workOrder));
+      }
+
+      this.ftzRowOverrides.set(key, input);
+      toggle.style.display = 'none';
+      editor.style.display = '';
+      input.focus();
+    });
+    return item;
   }
 
   // parse JSON import data (old and new format), returns null (after telling the user) if it is not valid
