@@ -1323,7 +1323,8 @@ export class Timesheetimport extends AbstractModule {
         const suggestions = document.createElement("div");
         suggestions.classList.add("ftzCorrection__suggestions");
         editor.appendChild(suggestions);
-        this.bindFtZSuggestions(input, suggestions, lookupContext, Timesheetimport.ftzSearchTerm(input.value || workOrder));
+        // search for the original workorder (e.g. all 123456-*), not the correction prefilled above
+        this.bindFtZSuggestions(input, suggestions, lookupContext, Timesheetimport.ftzSearchTerm(workOrder));
       }
 
       this.ftzRowOverrides.set(key, input);
