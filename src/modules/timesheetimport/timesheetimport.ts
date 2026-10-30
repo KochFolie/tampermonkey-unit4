@@ -1285,7 +1285,7 @@ export class Timesheetimport extends AbstractModule {
     const toggle = document.createElement("button");
     toggle.setAttribute("type", "button");
     toggle.classList.add("ftzCorrection__linkButton");
-    toggle.textContent = "abweichend …";
+    toggle.textContent = "abweichende Workorder";
     item.appendChild(toggle);
 
     const editor = document.createElement("div");

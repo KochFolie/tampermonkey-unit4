@@ -43,7 +43,7 @@ If something needs your attention, a review view is shown before the import star
   Your corrections are remembered and prefilled the next time.
   The correction applies to all bookings of that work order. If some of them need a different
   one (e.g. `123456-10001` for development but `123456-10002` for meetings), click
-  **abweichend …** next to these bookings and pick their own work order.
+  **abweichende Workorder** next to these bookings and pick their own work order.
 * **Missing hours**: if your bookings stay below the "Normal hours" of the timesheet, you can
   tick a checkbox to book the missing hours as overtime compensation, see below.
 
